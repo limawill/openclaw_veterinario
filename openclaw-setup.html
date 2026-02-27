@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>OpenClaw + Tailscale - Setup Completo</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    margin: 0;
+    line-height: 1.6;
+}
+
+header {
+    background: #1e293b;
+    padding: 25px;
+    text-align: center;
+    border-bottom: 2px solid #334155;
+}
+
+h1 { margin: 0; color: #38bdf8; }
+h2 {
+    color: #22d3ee;
+    border-bottom: 1px solid #334155;
+    padding-bottom: 6px;
+    margin-top: 40px;
+}
+
+section {
+    padding: 30px;
+    max-width: 1000px;
+    margin: auto;
+}
+
+code {
+    background: #1e293b;
+    padding: 3px 6px;
+    border-radius: 4px;
+    color: #7dd3fc;
+}
+
+pre {
+    background: #020617;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+
+.table th, .table td {
+    border: 1px solid #334155;
+    padding: 8px;
+}
+
+.table th {
+    background: #1e293b;
+}
+
+.badge {
+    display: inline-block;
+    padding: 5px 10px;
+    background: #065f46;
+    color: #d1fae5;
+    border-radius: 5px;
+    font-size: 13px;
+}
+
+.warning {
+    background: #7c2d12;
+    padding: 10px;
+    border-radius: 6px;
+    margin-top: 10px;
+}
+
+.footer {
+    text-align: center;
+    padding: 25px;
+    background: #1e293b;
+    margin-top: 50px;
+    font-size: 14px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>🦞 OpenClaw 2026 + Tailscale</h1>
+    <p>Documentação Oficial de Setup Seguro</p>
+</header>
+
+<section>
+<h2>📐 Arquitetura Final</h2>
+<pre>
+Notebook Fedora
+        ↓
+HTTPS Tailscale (.ts.net)
+        ↓
+Ubuntu Server
+        ↓
+OpenClaw Gateway (systemd + token + device trust)
+</pre>
+
+<p>Sem porta pública. Sem Nginx. Sem Caddy. 100% privado via Tailnet.</p>
+</section>
+
+<section>
+<h2>1️⃣ Instalar Tailscale</h2>
+<pre>
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+tailscale ip -4
+</pre>
+</section>
+
+<section>
+<h2>2️⃣ Expor OpenClaw via HTTPS</h2>
+<pre>
+sudo tailscale serve --bg http://localhost:18789
+tailscale serve status
+</pre>
+
+<p>Você verá algo como:</p>
+<pre>
+https://claw.tailXXXX.ts.net
+</pre>
+</section>
+
+<section>
+<h2>3️⃣ Configurar Gateway</h2>
+Arquivo: <code>~/.openclaw/openclaw.json</code>
+
+<pre>
+"gateway": {
+  "port": 18789,
+  "mode": "local",
+  "bind": "lan",
+  "controlUi": {
+    "allowedOrigins": [
+      "https://claw.tailXXXX.ts.net"
+    ]
+  },
+  "trustedProxies": [
+    "127.0.0.1",
+    "IP_TAILSCALE"
+  ],
+  "auth": {
+    "mode": "token",
+    "token": "SEU_TOKEN_AQUI"
+  }
+}
+</pre>
+
+<div class="warning">
+Nunca use <code>"auth": "none"</code> com <code>bind: "lan"</code>.
+</div>
+</section>
+
+<section>
+<h2>4️⃣ Rodar Gateway Manualmente (Teste)</h2>
+<pre>
+openclaw gateway run
+</pre>
+</section>
+
+<section>
+<h2>5️⃣ Acesso via Navegador (Token na URL)</h2>
+
+<p>Formato correto:</p>
+
+<pre>
+https://TOKEN@claw.tailXXXX.ts.net
+</pre>
+
+<p>Exemplo:</p>
+
+<pre>
+https://2e3943abc46c5c7a95f787857d227467ce4489a3a49d47b3@claw.tailXXXX.ts.net
+</pre>
+
+<p>Isso envia automaticamente o header <code>Authorization</code>.</p>
+</section>
+
+<section>
+<h2>6️⃣ Aprovar Dispositivo (Device Trust)</h2>
+
+Na primeira conexão será necessário aprovar o navegador:
+
+<pre>
+openclaw devices list
+openclaw devices approve ID_DO_DEVICE
+</pre>
+
+Após aprovação:
+<span class="badge">Saúde OK</span>
+<span class="badge">Online</span>
+</section>
+
+<section>
+<h2>7️⃣ Criar Serviço systemd (Persistência)</h2>
+
+Arquivo: <code>/etc/systemd/system/openclaw.service</code>
+
+<pre>
+[Unit]
+Description=OpenClaw Gateway
+After=network.target
+
+[Service]
+Type=simple
+User=claw
+WorkingDirectory=/home/claw/.openclaw
+ExecStart=/home/claw/.npm-global/bin/openclaw gateway run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+</pre>
+
+Ativar:
+
+<pre>
+sudo systemctl daemon-reload
+sudo systemctl enable openclaw
+sudo systemctl start openclaw
+</pre>
+
+Verificar:
+
+<pre>
+sudo systemctl status openclaw
+</pre>
+</section>
+
+<section>
+<h2>🔐 Camadas de Segurança</h2>
+
+<table class="table">
+<tr><th>Camada</th><th>Função</th></tr>
+<tr><td>Tailscale</td><td>Rede privada criptografada</td></tr>
+<tr><td>HTTPS automático</td><td>TLS interno</td></tr>
+<tr><td>Token</td><td>Autenticação do gateway</td></tr>
+<tr><td>Device Approval</td><td>Controle de navegador autorizado</td></tr>
+<tr><td>allowedOrigins</td><td>Proteção CORS</td></tr>
+<tr><td>trustedProxies</td><td>Confiança no proxy</td></tr>
+</table>
+</section>
+
+<section>
+<h2>🧪 Verificações Finais</h2>
+<pre>
+sudo systemctl status openclaw
+tailscale serve status
+</pre>
+
+Status esperado:
+<span class="badge">active (running)</span>
+</section>
+
+<section>
+<h2>🧰 Comandos Úteis</h2>
+<pre>
+openclaw devices list
+openclaw devices approve ID
+sudo journalctl -u openclaw -f
+tail -f /tmp/openclaw/*.log
+</pre>
+</section>
+
+<section>
+<h2>🧠 Observações Importantes</h2>
+<ul>
+<li>Se trocar de navegador, será necessário aprovar novamente.</li>
+<li>Se o IP Tailscale mudar, atualize trustedProxies.</li>
+<li>Nunca exponha a porta 18789 publicamente.</li>
+<li>Nunca use modo sem autenticação em bind LAN.</li>
+</ul>
+</section>
+
+<div class="footer">
+OpenClaw Infra Setup — 2026<br>
+Documentação Técnica Oficial
+</div>
+
+</body>
+</html>
