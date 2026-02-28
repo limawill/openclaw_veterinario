@@ -9,6 +9,7 @@ from yumi.api.routes import router
 from yumi.api.usuario_routes import router as usuario_router
 from yumi.api.veterinario_routes import router as veterinario_router
 from yumi.core.config import settings
+from yumi.core.logger import logger
 
 # Criar aplicação FastAPI
 app = FastAPI(
@@ -31,7 +32,7 @@ app.add_middleware(
 # Incluir rotas
 app.include_router(router, prefix="")
 app.include_router(clinica_router, prefix="/api/v1/clinicas", tags=["Clínicas"])
-app.include_router(clinica_func_router, prefix="/api/v1/clinicas/funcionamento", tags=["Funcionamento"])
+app.include_router(clinica_func_router, prefix="/api/v1/clinicas/{clinica_id}/funcionamento", tags=["Funcionamento"])
 app.include_router(usuario_router, prefix="/api/v1/usuarios", tags=["Usuários"])
 app.include_router(veterinario_router, prefix="/api/v1/veterinarios", tags=["Veterinários"])
 app.include_router(agendamento_router, prefix="/api/v1/agendamentos", tags=["Agendamentos"])
@@ -42,6 +43,11 @@ app.include_router(integracao_router, prefix="/api/v1/integracoes", tags=["Integ
 @app.on_event("startup")
 async def startup_event():
     """Executado quando a aplicação inicia."""
+    logger.info(
+        f"Iniciando {settings.APP_NAME} v{settings.APP_VERSION} "
+        f"- Ambiente: {settings.ENVIRONMENT}"
+    )
+    
     print(f"🚀 Iniciando {settings.APP_NAME} v{settings.APP_VERSION}")
     print(f"📝 Ambiente: {settings.ENVIRONMENT}")
     print(f"🔗 Documentação: http://{settings.HOST}:{settings.PORT}/docs")
@@ -50,6 +56,7 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Executado quando a aplicação encerra."""
+    logger.info(f"Encerrando {settings.APP_NAME}")
     print("👋 Encerrando Yumi Agent...")
 
 # Para execução direta (útil para debugging)

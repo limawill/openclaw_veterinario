@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from yumi.core.database import get_db
+from yumi.core.logger import logger
 from yumi.schemas.schemas_clinica import ClinicaCreate, ClinicaUpdate
 from yumi.services import clinica_service
 
@@ -14,21 +15,26 @@ async def criar_clinica(
     db: Session = Depends(get_db)
 ):
     """Cria uma nova clínica."""
+    logger.info(f"Requisição POST /clinicas - Criando clínica: {clinica_data.nome}")
     
-    # Chama o serviço (1 linha!)
-    nova_clinica = clinica_service.create_clinica(db, clinica_data)
-    
-    # Monta resposta
-    return {
-        "mensagem": "Clínica criada com sucesso",
-        "clinica": {
-            "id": nova_clinica.id,
-            "nome": nova_clinica.nome,
-            "endereco": nova_clinica.endereco,
-            "ativo": nova_clinica.ativo,
-            "created_at": nova_clinica.created_at.isoformat() if nova_clinica.created_at else None
+    try:
+        # Chama o serviço (1 linha!)
+        nova_clinica = clinica_service.create_clinica(db, clinica_data)
+        
+        # Monta resposta
+        return {
+            "mensagem": "Clínica criada com sucesso",
+            "clinica": {
+                "id": nova_clinica.id,
+                "nome": nova_clinica.nome,
+                "endereco": nova_clinica.endereco,
+                "ativo": nova_clinica.ativo,
+                "created_at": nova_clinica.created_at.isoformat() if nova_clinica.created_at else None
+            }
         }
-    }
+    except Exception as e:
+        logger.error(f"Erro ao criar clínica {clinica_data.nome}", exception=e)
+        raise
 
 
 @router.get("/", status_code=status.HTTP_200_OK)
