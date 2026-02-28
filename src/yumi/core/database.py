@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
-from urllib.parse import urlparse
 from yumi.core.config import settings
+
 
 def get_db_path_from_url() -> Path:
     """
@@ -21,6 +21,7 @@ def get_db_path_from_url() -> Path:
         return project_root / db_path
     
     return Path(db_path)
+
 
 def get_connection():
     """Retorna uma conexão com o banco SQLite."""

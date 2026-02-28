@@ -41,6 +41,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+
 @lru_cache()
 def get_settings() -> Settings:
     """Retorna instância cacheada das configurações."""

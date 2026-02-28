@@ -39,6 +39,7 @@ async def root():
             detail=f"Erro ao obter informações: {str(e)}"
         )
 
+
 @router.get(
     "/health",
     response_model=HealthCheck,
@@ -58,6 +59,7 @@ async def health_check():
         database="conectado"  # Placeholder, depois implementaremos verificação real
     )
 
+
 @router.get(
     "/info/python",
     summary="Informações do Python",
@@ -72,6 +74,7 @@ async def python_info():
         "versao": get_python_version_short(),
         "executavel": __import__('sys').executable
     }
+
 
 @router.get(
     "/info/sqlite",

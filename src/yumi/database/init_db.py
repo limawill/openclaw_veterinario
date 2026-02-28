@@ -9,9 +9,6 @@ from yumi.core.database import get_connection, get_db_path_from_url
 
 # Define o caminho do banco de dados
 DB_PATH = get_db_path_from_url()
-from yumi.core.database import get_db_path_from_url
-
-DB_PATH = get_db_path_from_url()
 
 
 def init_database():
