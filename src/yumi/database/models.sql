@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS clinica_funcionamento (
     dia_semana INTEGER NOT NULL CHECK (dia_semana BETWEEN 0 AND 6),
     hora_abertura TIME NOT NULL,
     hora_fechamento TIME NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (clinica_id) REFERENCES clinica (id) ON DELETE CASCADE,
     UNIQUE (clinica_id, dia_semana)
 );

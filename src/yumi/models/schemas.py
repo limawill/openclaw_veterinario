@@ -1,5 +1,3 @@
-"""Schemas Pydantic para validação e documentação das respostas."""
-
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Dict, Optional
