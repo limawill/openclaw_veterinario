@@ -1,35 +1,28 @@
-import sqlite3
-from pathlib import Path
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from yumi.core.config import settings
 
+# 1. Cria a engine (conexão com o banco)
+#    - connect_args: só para SQLite (ignorado em outros bancos)
+engine = create_engine(
+    settings.DATABASE_URL,
+    connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {},
+    echo=settings.DATABASE_ECHO
+)
 
-def get_db_path_from_url() -> Path:
+# 2. Cria a fábrica de sessões
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+# 3. Dependência do FastAPI para obter a sessão
+def get_db():
     """
-    Extrai o caminho do arquivo da DATABASE_URL.
-    Funciona com sqlite:///caminho/para/arquivo.db
+    Dependência que fornece uma sessão de banco de dados.
+    Uso: db: Session = Depends(get_db)
     """
-    if not settings.DATABASE_URL.startswith("sqlite:///"):
-        raise ValueError(f"Banco não é SQLite: {settings.DATABASE_URL}")
-    
-    # Remove 'sqlite:///' e pega o caminho
-    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
-    
-    # Se for caminho relativo, resolve a partir da raiz do projeto
-    if not Path(db_path).is_absolute():
-        # Sobe de core/ até a raiz do projeto
-        project_root = Path(__file__).parent.parent.parent.parent
-        return project_root / db_path
-    
-    return Path(db_path)
-
-
-def get_connection():
-    """Retorna uma conexão com o banco SQLite."""
-    db_path = get_db_path_from_url()
-    
-    # Garante que o diretório existe
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
-    return conn
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

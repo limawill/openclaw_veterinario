@@ -1,9 +1,9 @@
-from datetime import datetime
-from .base import Base, TimestampMixin
+from sqlalchemy import JSON, Boolean, Column, String
 from sqlalchemy.orm import relationship
+
 from yumi.utils.uuid_generator import gerar_uuid
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Column, String, Boolean, DateTime, JSON
+
+from .base import Base, TimestampMixin
 
 
 class Clinica(Base, TimestampMixin):
@@ -17,6 +17,8 @@ class Clinica(Base, TimestampMixin):
     ativo = Column(Boolean, default=True)
     
     # Relacionamentos
+    usuarios = relationship("Usuario", back_populates="clinica")
+    veterinarios = relationship("Veterinario", back_populates="clinica")
     clinica_funcionamento = relationship("ClinicaFuncionamento", back_populates="clinica")
     integracao = relationship("Integracao", back_populates="clinica")
     agendamentos = relationship("Agendamento", back_populates="clinica")
