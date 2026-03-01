@@ -1,7 +1,9 @@
-from .base import Base, TimestampMixin
+from sqlalchemy import Boolean, Column, ForeignKey, String
 from sqlalchemy.orm import relationship
+
 from yumi.utils.uuid_generator import gerar_uuid
-from sqlalchemy import Column, String, Boolean, ForeignKey
+
+from .base import Base, TimestampMixin
 
 
 class Veterinario(Base, TimestampMixin):
@@ -12,6 +14,7 @@ class Veterinario(Base, TimestampMixin):
     clinica_id = Column(String(36), ForeignKey('clinica.id'), nullable=False)
     nome = Column(String(255), nullable=False)
     especialidade = Column(String(255), nullable=True)
+    email = Column(String(255), unique=True, nullable=False)
     ativo = Column(Boolean, default=True)
     
     # Relacionamentos

@@ -31,7 +31,7 @@ def get_db():
     try:
         yield db
     except Exception as e:
-        logger.error("Erro durante operação de banco de dados", exception=e)
+        logger.error("Erro durante operação de banco de dados", exc_info=True)
         db.rollback()
         raise
     finally:

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, validator
 # SCHEMAS PARA RECEBER DADOS (REQUEST)
 # =====================================================
 
+
 class ClinicaFuncionamentoBase(BaseModel):
     """Campos base para funcionamento (reutilizado em criação/atualização)."""
     dia_semana: int = Field(..., ge=0, le=6, description="0=Dom, 1=Seg, ..., 6=Sáb")
@@ -20,9 +21,11 @@ class ClinicaFuncionamentoBase(BaseModel):
             raise ValueError('hora_fechamento deve ser maior que hora_abertura')
         return v
 
+
 class ClinicaFuncionamentoCreate(ClinicaFuncionamentoBase):
     """Schema para CRIAR um horário de funcionamento."""
     pass  # Herda todos os campos do base
+
 
 class ClinicaFuncionamentoUpdate(BaseModel):
     """Schema para ATUALIZAR um horário (todos opcionais)."""
@@ -34,6 +37,7 @@ class ClinicaFuncionamentoUpdate(BaseModel):
 # SCHEMAS PARA RESPOSTA (RESPONSE)
 # =====================================================
 
+
 class ClinicaFuncionamentoResponse(ClinicaFuncionamentoBase):
     """Schema para RETORNAR dados de um horário."""
     id: str
@@ -42,6 +46,7 @@ class ClinicaFuncionamentoResponse(ClinicaFuncionamentoBase):
     updated_at: Optional[datetime]
     
     model_config = ConfigDict(from_attributes=True)
+
 
 class ClinicaFuncionamentoListResponse(BaseModel):
     """Schema para listagem de horários."""
