@@ -15,7 +15,7 @@ from yumi.schemas.schemas_integracao import (
 )
 from yumi.services import integracao_service
 
-router = APIRouter(prefix="/api/v1/integracoes", tags=["Integrações"])
+router = APIRouter()
 
 # =====================================================
 # POST - Criar integração
