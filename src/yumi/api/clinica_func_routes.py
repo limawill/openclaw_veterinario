@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.orm import Session
 
 from yumi.core.database import get_db
+from yumi.core.logger import logger
 from yumi.schemas.schemas_clinica_func import (
     ClinicaFuncionamentoCreate,
     ClinicaFuncionamentoListResponse,
@@ -38,7 +39,12 @@ async def criar_horario(
     - Não pode haver dois horários para o mesmo dia
     - Fechamento deve ser maior que abertura
     """
-    return clinica_func_service.criar_horario(db, clinica_id, horario_data)
+    logger.info(f"Requisição POST /funcionamento - Criando horário para clínica {clinica_id}, dia {horario_data.dia_semana}")
+    try:
+        return clinica_func_service.criar_horario(db, clinica_id, horario_data)
+    except Exception:
+        logger.error(f"Erro ao criar horário para clínica {clinica_id}", exc_info=True)
+        raise
 
 # =====================================================
 # GET - Listar todos os horários
@@ -57,6 +63,7 @@ async def listar_horarios(
     Retorna todos os horários de funcionamento cadastrados para a clínica.
     Ordenados por dia da semana (0 a 6).
     """
+    logger.debug(f"Requisição GET /funcionamento - Listando horários da clínica {clinica_id}")
     horarios = clinica_func_service.listar_horarios(db, clinica_id)
     
     return {
@@ -82,6 +89,7 @@ async def obter_horario_por_dia(
     """
     Retorna o horário de funcionamento para um dia específico.
     """
+    logger.debug(f"Requisição GET /funcionamento/{dia_semana} - Clínica {clinica_id}")
     return clinica_func_service.get_horario_by_dia(db, clinica_id, dia_semana)
 
 # =====================================================
@@ -105,7 +113,12 @@ async def atualizar_horario(
     Todos os campos são opcionais.
     Se mudar o dia_semana, verifica se já não existe horário para o novo dia.
     """
-    return clinica_func_service.atualizar_horario(db, horario_id, horario_data)
+    logger.info(f"Requisição PUT /funcionamento/{horario_id} - Atualizando horário")
+    try:
+        return clinica_func_service.atualizar_horario(db, horario_id, horario_data)
+    except Exception:
+        logger.error(f"Erro ao atualizar horário {horario_id}", exc_info=True)
+        raise
 
 # =====================================================
 # DELETE - Remover horário
@@ -124,7 +137,12 @@ async def deletar_horario(
     """
     Remove um horário de funcionamento.
     """
-    return clinica_func_service.deletar_horario(db, horario_id)
+    logger.info(f"Requisição DELETE /funcionamento/{horario_id} - Removendo horário")
+    try:
+        return clinica_func_service.deletar_horario(db, horario_id)
+    except Exception:
+        logger.error(f"Erro ao deletar horário {horario_id}", exc_info=True)
+        raise
 
 # =====================================================
 # UTILIDADE - Verificar disponibilidade de horário
@@ -145,6 +163,7 @@ async def verificar_disponibilidade(
     
     Útil para validar agendamentos antes de criar.
     """
+    logger.debug(f"Verificando disponibilidade - Clínica {clinica_id}, dia {dia_semana}, {hora}")
     disponivel = clinica_func_service.verificar_disponibilidade(
         db, clinica_id, dia_semana, hora
     )

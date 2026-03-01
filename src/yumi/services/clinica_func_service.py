@@ -1,5 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+
+from yumi.core.logger import logger
 from yumi.schemas.schemas_clinica_func import (
     ClinicaFuncionamentoCreate,
     ClinicaFuncionamentoUpdate,
@@ -18,6 +20,7 @@ def _validar_dia_semana_unico(db: Session, clinica_id: str, dia_semana: int, hor
     Verifica se já existe horário para este dia na clínica.
     Se horario_id for fornecido, ignora na verificação (para updates).
     """
+    logger.debug(f"Validando unicidade do dia {dia_semana} para clínica {clinica_id}")
     query = db.query(ClinicaFuncionamento).filter(
         ClinicaFuncionamento.clinica_id == clinica_id,
         ClinicaFuncionamento.dia_semana == dia_semana
@@ -28,6 +31,7 @@ def _validar_dia_semana_unico(db: Session, clinica_id: str, dia_semana: int, hor
     
     existente = query.first()
     if existente:
+        logger.warning(f"Tentativa de duplicar dia {dia_semana} na clínica {clinica_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Já existe horário cadastrado para o dia {dia_semana}"
@@ -45,6 +49,8 @@ def criar_horario(
     """
     Cria um novo horário de funcionamento para uma clínica.
     """
+    logger.debug(f"Criando horário para clínica {clinica_id}, dia {horario_data.dia_semana}")
+    
     # 1. Verifica se a clínica existe
     clinica = get_clinica_by_id(db, clinica_id)
     
@@ -64,28 +70,36 @@ def criar_horario(
     db.commit()
     db.refresh(novo_horario)
     
+    logger.info(f"Horário criado: clínica {clinica_id}, dia {novo_horario.dia_semana} ({novo_horario.hora_abertura}-{novo_horario.hora_fechamento})")
     return novo_horario
 
 def listar_horarios(db: Session, clinica_id: str):
     """
     Lista todos os horários de funcionamento de uma clínica.
     """
+    logger.debug(f"Listando horários para clínica {clinica_id}")
+    
     # Verifica se a clínica existe
     clinica = get_clinica_by_id(db, clinica_id)
     
-    return db.query(ClinicaFuncionamento).filter(
+    horarios = db.query(ClinicaFuncionamento).filter(
         ClinicaFuncionamento.clinica_id == clinica_id
     ).order_by(ClinicaFuncionamento.dia_semana).all()
+    
+    logger.info(f"Encontrados {len(horarios)} horário(s) para clínica {clinica_id}")
+    return horarios
 
 def get_horario_by_id(db: Session, horario_id: str):
     """
     Busca um horário específico por ID.
     """
+    logger.debug(f"Buscando horário ID: {horario_id}")
     horario = db.query(ClinicaFuncionamento).filter(
         ClinicaFuncionamento.id == horario_id
     ).first()
     
     if not horario:
+        logger.warning(f"Horário não encontrado: {horario_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Horário com ID {horario_id} não encontrado"
@@ -97,12 +111,14 @@ def get_horario_by_dia(db: Session, clinica_id: str, dia_semana: int):
     """
     Busca o horário de um dia específico.
     """
+    logger.debug(f"Buscando horário para clínica {clinica_id}, dia {dia_semana}")
     horario = db.query(ClinicaFuncionamento).filter(
         ClinicaFuncionamento.clinica_id == clinica_id,
         ClinicaFuncionamento.dia_semana == dia_semana
     ).first()
     
     if not horario:
+        logger.warning(f"Horário não encontrado para dia {dia_semana} na clínica {clinica_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Não há horário cadastrado para o dia {dia_semana}"
@@ -118,6 +134,8 @@ def atualizar_horario(
     """
     Atualiza um horário existente.
     """
+    logger.debug(f"Atualizando horário ID: {horario_id}")
+    
     # 1. Busca o horário
     horario = get_horario_by_id(db, horario_id)
     
@@ -139,17 +157,20 @@ def atualizar_horario(
     db.commit()
     db.refresh(horario)
     
+    logger.info(f"Horário atualizado: ID {horario_id}")
     return horario
 
 def deletar_horario(db: Session, horario_id: str):
     """
     Remove um horário (delete físico mesmo).
     """
+    logger.debug(f"Deletando horário ID: {horario_id}")
     horario = get_horario_by_id(db, horario_id)
     
     db.delete(horario)
     db.commit()
     
+    logger.info(f"Horário deletado: ID {horario_id}")
     return {"mensagem": "Horário removido com sucesso"}
 
 # =====================================================
