@@ -77,13 +77,14 @@ class TestClinicaService:
     def test_listar_clinicas_vazia(self, mock_db):
         """Testa listagem quando não há clínicas."""
         # Arrange
+        clinica_id = "clinica-test-123"
         query_mock = Mock()
         query_mock.filter.return_value = query_mock
         query_mock.all.return_value = []
         mock_db.query.return_value = query_mock
         
         # Act
-        resultado = listar_clinicas(mock_db)
+        resultado = listar_clinicas(mock_db, clinica_id)
         
         # Assert
         assert resultado == []
@@ -92,13 +93,14 @@ class TestClinicaService:
     def test_listar_clinicas_com_dados(self, mock_db, clinica_existente):
         """Testa listagem com clínicas existentes."""
         # Arrange
+        clinica_id = clinica_existente.id
         query_mock = Mock()
         query_mock.filter.return_value = query_mock
         query_mock.all.return_value = [clinica_existente]
         mock_db.query.return_value = query_mock
         
         # Act
-        resultado = listar_clinicas(mock_db)
+        resultado = listar_clinicas(mock_db, clinica_id)
         
         # Assert
         assert len(resultado) == 1
