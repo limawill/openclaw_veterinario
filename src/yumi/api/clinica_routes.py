@@ -1,118 +1,164 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from yumi.auth.dependencies import (
+    Usuario,
+    get_current_admin,
+    get_current_atendente,
+    get_current_clinica_id,
+    verificar_mesma_clinica,
+)
 from yumi.core.database import get_db
 from yumi.core.logger import logger
-from yumi.schemas.schemas_clinica import ClinicaCreate, ClinicaUpdate
+from yumi.schemas.schemas_clinica import (
+    ClinicaCreate,
+    ClinicaListResponse,
+    ClinicaResponse,
+    ClinicaUpdate,
+)
 from yumi.services import clinica_service
 
 router = APIRouter()
 
+# =====================================================
+# POST - Criar clínica (APENAS ADMIN)
+# =====================================================
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ClinicaResponse,
+    summary="Criar nova clínica"
+)
 async def criar_clinica(
     clinica_data: ClinicaCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)  # 🔐 Só admin
 ):
-    """Cria uma nova clínica."""
-    logger.info(f"Requisição POST /clinicas - Criando clínica: {clinica_data.nome}")
+    """
+    Cria uma nova clínica.
     
-    try:
-        # Chama o serviço (1 linha!)
-        nova_clinica = clinica_service.create_clinica(db, clinica_data)
-        
-        # Monta resposta
-        return {
-            "mensagem": "Clínica criada com sucesso",
-            "clinica": {
-                "id": nova_clinica.id,
-                "nome": nova_clinica.nome,
-                "endereco": nova_clinica.endereco,
-                "ativo": nova_clinica.ativo,
-                "created_at": nova_clinica.created_at.isoformat() if nova_clinica.created_at else None
-            }
-        }
-    except Exception as e:
-        logger.error(f"Erro ao criar clínica {clinica_data.nome}", exception=e)
-        raise
+    **Acesso:** Apenas administradores
+    """
+    logger.info(f"Admin {current_user.email} criando nova clínica")
+    
+    # Admin pode criar clínica (não precisa verificar mesma clínica)
+    return clinica_service.create_clinica(db, clinica_data)
+
+# =====================================================
+# GET - Listar clínicas (ATENDENTE+)
+# =====================================================
 
 
-@router.get("/", status_code=status.HTTP_200_OK)
-async def listar_clinicas(db: Session = Depends(get_db)):
-    """Lista todas as clínicas."""
-    clinicas = clinica_service.listar_clinicas(db)
+@router.get(
+    "/",
+    response_model=ClinicaListResponse,
+    summary="Listar clínicas"
+)
+async def listar_clinicas(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),  # 🔐 Atendente+
+    clinica_id: str = Depends(get_current_clinica_id)        # 🔐 Pega do token
+):
+    """
+    Lista clínicas do usuário.
+    
+    **Acesso:** Atendentes, administradores e devs
+    **Multi-tenant:** Apenas dados da própria clínica
+    """
+    logger.debug(f"Usuário {current_user.email} listando clínicas")
+    
+    # Busca APENAS a clínica do usuário logado
+    clinicas = clinica_service.listar_clinicas(db, clinica_id)
+    
     return {
         "mensagem": f"Encontradas {len(clinicas)} clínicas",
-        "clinicas": [
-            {
-                "id": c.id,
-                "nome": c.nome,
-                "endereco": c.endereco,
-                "ativo": c.ativo,
-                "created_at": c.created_at.isoformat() if c.created_at else None
-            } for c in clinicas
-        ]
+        "total": len(clinicas),
+        "clinicas": clinicas
     }
 
+# =====================================================
+# GET - Buscar clínica por ID (ATENDENTE+)
+# =====================================================
 
-@router.get("/{clinica_id}", status_code=status.HTTP_200_OK)
+@router.get(
+    "/{clinica_id}",
+    response_model=ClinicaResponse,
+    summary="Buscar clínica por ID"
+)
 async def obter_clinica(
-    clinica_id: str,  # ← Parâmetro vindo da URL
-    db: Session = Depends(get_db)
+    clinica_id: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),  # 🔐 Atendente+
+    _: None = Depends(verificar_mesma_clinica)               # 🔐 Valida multi-tenant
 ):
-    """Busca uma clínica específica por ID."""
+    """
+    Busca uma clínica específica.
+    
+    **Acesso:** Atendentes, administradores e devs
+    **Multi-tenant:** Apenas se for da mesma clínica
+    """
+    logger.debug(f"Usuário {current_user.email} buscando clínica {clinica_id}")
     
     clinica = clinica_service.get_clinica_by_id(db, clinica_id)
-    
-    return {
-        "mensagem": "Clínica encontrada",
-        "clinica": {
-            "id": clinica.id,
-            "nome": clinica.nome,
-            "endereco": clinica.endereco,
-            "ativo": clinica.ativo,
-            "created_at": clinica.created_at.isoformat() if clinica.created_at else None
-        }
-    }
+    return clinica
 
+# =====================================================
+# PUT - Atualizar clínica (APENAS ADMIN)
+# =====================================================
 
-@router.put("/{clinica_id}", status_code=status.HTTP_200_OK)
+@router.put(
+    "/{clinica_id}",
+    response_model=ClinicaResponse,
+    summary="Atualizar clínica"
+)
 async def atualizar_clinica(
     clinica_id: str,
-    clinica_data: ClinicaUpdate,  # ← Schema de update
-    db: Session = Depends(get_db)
+    clinica_data: ClinicaUpdate,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin),     # 🔐 Só admin
+    _: None = Depends(verificar_mesma_clinica)               # 🔐 Valida multi-tenant
 ):
-    """Atualiza os dados de uma clínica existente."""
+    """
+    Atualiza dados de uma clínica.
+    
+    **Acesso:** Apenas administradores
+    **Multi-tenant:** Apenas se for da mesma clínica
+    """
+    logger.info(f"Admin {current_user.email} atualizando clínica {clinica_id}")
     
     clinica = clinica_service.update_clinica(db, clinica_id, clinica_data)
-    
-    return {
-        "mensagem": "Clínica atualizada com sucesso",
-        "clinica": {
-            "id": clinica.id,
-            "nome": clinica.nome,
-            "endereco": clinica.endereco,
-            "ativo": clinica.ativo,
-            "configuracoes": clinica.configuracoes,
-            "updated_at": clinica.updated_at.isoformat() if clinica.updated_at else None
-        }
-    }
+    return clinica
 
+# =====================================================
+# DELETE - Desativar clínica (APENAS ADMIN)
+# =====================================================
 
-@router.delete("/{clinica_id}",  status_code=status.HTTP_200_OK)
+@router.delete(
+    "/{clinica_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Desativar clínica"
+)
 async def deletar_clinica(
     clinica_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin),     # 🔐 Só admin
+    _: None = Depends(verificar_mesma_clinica)               # 🔐 Valida multi-tenant
 ):
-    """Deleta (ou desativa) uma clínica."""
+    """
+    Desativa uma clínica (soft delete).
+    
+    **Acesso:** Apenas administradores
+    **Multi-tenant:** Apenas se for da mesma clínica
+    """
+    logger.warning(f"Admin {current_user.email} desativando clínica {clinica_id}")
     
     clinica = clinica_service.delete_clinica(db, clinica_id)
-    
     return {
         "mensagem": "Clínica desativada com sucesso",
         "clinica": {
             "id": clinica.id,
             "nome": clinica.nome,
-            "ativo": clinica.ativo  # ← False agora
+            "ativo": clinica.ativo
         }
     }

@@ -6,6 +6,7 @@ from .usuario import Usuario
 from .veterinario import Veterinario
 from .agendamento import Agendamento
 from .integracao import Integracao
+from .refresh_token import RefreshToken
 from .base import Base, TimestampMixin
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "Veterinario",
     "Agendamento",
     "Integracao",
+    "RefreshToken",
 ]

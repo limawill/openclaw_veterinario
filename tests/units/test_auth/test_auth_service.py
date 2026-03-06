@@ -11,6 +11,9 @@ from yumi.auth.auth_service import (
     _validar_usuario_ativo,
     autenticar_usuario,
     obter_usuario_por_id,
+    renovar_tokens,
+    revogar_refresh_token,
+    salvar_refresh_token,
 )
 
 
@@ -144,33 +147,47 @@ class TestAutenticarUsuario:
     @patch('yumi.auth.auth_service._validar_senha')
     @patch('yumi.auth.auth_service._atualizar_ultimo_login')
     @patch('yumi.auth.auth_service.criar_token_jwt')
+    @patch('yumi.auth.auth_service.criar_refresh_token')
+    @patch('yumi.auth.auth_service.salvar_refresh_token')
     def test_autenticar_usuario_sucesso(
         self,
+        mock_salvar_refresh,
+        mock_criar_refresh,
         mock_criar_token,
         mock_atualizar_login,
         mock_validar_senha,
         mock_validar_ativo,
         mock_get_usuario
     ):
-        """Deve autenticar com sucesso e retornar token."""
+        """Deve autenticar com sucesso e retornar dict com tokens e dados do usuário."""
         # Arrange
         mock_get_usuario.return_value = self.mock_usuario
         mock_criar_token.return_value = "token.jwt.valido"
-        
+        mock_criar_refresh.return_value = "refresh.jwt.valido"
+
         # Act
-        token = autenticar_usuario(
+        resultado = autenticar_usuario(
             self.mock_db,
             "teste@email.com",
             "senha123"
         )
-        
-        # Assert
-        assert token == "token.jwt.valido"
+
+        # Assert — retorno agora é dict, não string
+        assert resultado["access_token"] == "token.jwt.valido"
+        assert resultado["refresh_token"] == "refresh.jwt.valido"
+        assert resultado["usuario"]["email"] == "teste@email.com"
+        assert resultado["usuario"]["role"] == "admin"
         mock_get_usuario.assert_called_once_with(self.mock_db, "teste@email.com")
         mock_validar_ativo.assert_called_once_with(self.mock_usuario)
         mock_validar_senha.assert_called_once_with("senha123", "hash123")
         mock_atualizar_login.assert_called_once_with(self.mock_db, self.mock_usuario)
         mock_criar_token.assert_called_once()
+        mock_criar_refresh.assert_called_once()
+        mock_salvar_refresh.assert_called_once_with(
+            self.mock_db,
+            usuario_id=self.mock_usuario.id,
+            token="refresh.jwt.valido"
+        )
 
     @patch('yumi.auth.auth_service._get_usuario_por_email')
     def test_autenticar_usuario_email_nao_encontrado(self, mock_get_usuario):
@@ -237,16 +254,211 @@ class TestObterUsuarioPorId:
         mock_db = Mock()
         mock_usuario = Mock()
         mock_usuario.id = "user-123"
-        
+
         mock_query = Mock()
         mock_query.filter.return_value.first.return_value = mock_usuario
         mock_db.query.return_value = mock_query
-        
+
         # Act
         resultado = obter_usuario_por_id(mock_db, "user-123")
-        
+
         # Assert
         assert resultado == mock_usuario
+
+    def test_obter_usuario_por_id_nao_encontrado(self):
+        """Deve lançar HTTPException 404 quando ID não existe."""
+        mock_db = Mock()
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = None
+        mock_db.query.return_value = mock_query
+
+        with pytest.raises(HTTPException) as exc_info:
+            obter_usuario_por_id(mock_db, "id-inexistente")
+
+        assert exc_info.value.status_code == 404
+
+
+class TestSalvarRefreshToken:
+    """Testes para função salvar_refresh_token."""
+
+    @patch('yumi.auth.auth_service.gerar_uuid')
+    def test_salvar_persiste_registro_no_banco(self, mock_uuid):
+        """Deve criar um registro RefreshToken e fazer commit."""
+        # Arrange
+        mock_db = Mock()
+        mock_uuid.return_value = "uuid-gerado"
+
+        # Act
+        salvar_refresh_token(mock_db, usuario_id="user-123", token="refresh.jwt")
+
+        # Assert
+        mock_db.add.assert_called_once()
+        mock_db.commit.assert_called_once()
+        registro = mock_db.add.call_args[0][0]
+        assert registro.usuario_id == "user-123"
+        assert registro.token == "refresh.jwt"
+        assert registro.revogado is False
+        assert registro.expires_at is not None
+
+
+class TestRevogarRefreshToken:
+    """Testes para função revogar_refresh_token."""
+
+    def test_revogar_token_existente_nao_revogado(self):
+        """Deve marcar o token como revogado e fazer commit."""
+        # Arrange
+        mock_db = Mock()
+        mock_registro = Mock()
+        mock_registro.revogado = False
+        mock_registro.usuario_id = "user-123"
+
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_registro
+        mock_db.query.return_value = mock_query
+
+        # Act
+        revogar_refresh_token(mock_db, refresh_token="refresh.jwt")
+
+        # Assert
+        assert mock_registro.revogado is True
+        mock_db.commit.assert_called_once()
+
+    def test_revogar_token_ja_revogado_nao_faz_commit(self):
+        """Não deve fazer commit quando token já está revogado."""
+        # Arrange
+        mock_db = Mock()
+        mock_registro = Mock()
+        mock_registro.revogado = True
+
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_registro
+        mock_db.query.return_value = mock_query
+
+        # Act
+        revogar_refresh_token(mock_db, refresh_token="refresh.jwt")
+
+        # Assert
+        mock_db.commit.assert_not_called()
+
+    def test_revogar_token_nao_encontrado_nao_faz_commit(self):
+        """Não deve fazer commit quando token não é encontrado no banco."""
+        # Arrange
+        mock_db = Mock()
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = None
+        mock_db.query.return_value = mock_query
+
+        # Act
+        revogar_refresh_token(mock_db, refresh_token="token.inexistente")
+
+        # Assert
+        mock_db.commit.assert_not_called()
+
+
+class TestRenovarTokens:
+    """Testes para função renovar_tokens."""
+
+    def setup_method(self):
+        self.mock_db = Mock()
+        self.mock_usuario = Mock()
+        self.mock_usuario.id = "user-123"
+        self.mock_usuario.email = "teste@email.com"
+        self.mock_usuario.clinica_id = "clinica-456"
+        self.mock_usuario.role = "admin"
+        self.mock_usuario.nome = "João"
+        self.mock_usuario.ativo = True
+
+    @patch('yumi.auth.auth_service.decodificar_token_jwt')
+    @patch('yumi.auth.auth_service.obter_usuario_por_id')
+    @patch('yumi.auth.auth_service._validar_usuario_ativo')
+    @patch('yumi.auth.auth_service.criar_token_jwt')
+    @patch('yumi.auth.auth_service.criar_refresh_token')
+    @patch('yumi.auth.auth_service.salvar_refresh_token')
+    def test_renovar_tokens_sucesso(
+        self,
+        mock_salvar,
+        mock_criar_refresh,
+        mock_criar_token,
+        mock_validar_ativo,
+        mock_obter_usuario,
+        mock_decodificar
+    ):
+        """Deve revogar token antigo e emitir novo par de tokens."""
+        # Arrange
+        mock_decodificar.return_value = {"sub": "user-123", "type": "refresh"}
+        mock_obter_usuario.return_value = self.mock_usuario
+        mock_criar_token.return_value = "novo.access.token"
+        mock_criar_refresh.return_value = "novo.refresh.token"
+
+        mock_registro = Mock()
+        mock_registro.revogado = False
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_registro
+        self.mock_db.query.return_value = mock_query
+
+        # Act
+        resultado = renovar_tokens(self.mock_db, refresh_token="refresh.jwt.antigo")
+
+        # Assert
+        assert resultado["access_token"] == "novo.access.token"
+        assert resultado["refresh_token"] == "novo.refresh.token"
+        assert mock_registro.revogado is True
+        self.mock_db.commit.assert_called()
+        mock_salvar.assert_called_once()
+
+    @patch('yumi.auth.auth_service.decodificar_token_jwt')
+    def test_renovar_tokens_jwt_invalido(self, mock_decodificar):
+        """Deve lançar 401 quando o JWT do refresh token é inválido."""
+        from jose import JWTError
+        mock_decodificar.side_effect = JWTError("token invalido")
+
+        with pytest.raises(HTTPException) as exc_info:
+            renovar_tokens(self.mock_db, refresh_token="token.invalido")
+
+        assert exc_info.value.status_code == 401
+        assert "inválido ou expirado" in exc_info.value.detail
+
+    @patch('yumi.auth.auth_service.decodificar_token_jwt')
+    def test_renovar_tokens_type_errado(self, mock_decodificar):
+        """Deve lançar 401 quando token não é do tipo refresh."""
+        mock_decodificar.return_value = {"sub": "user-123", "type": "access"}
+
+        with pytest.raises(HTTPException) as exc_info:
+            renovar_tokens(self.mock_db, refresh_token="access.token.errado")
+
+        assert exc_info.value.status_code == 401
+        assert "não é um refresh token" in exc_info.value.detail
+
+    @patch('yumi.auth.auth_service.decodificar_token_jwt')
+    def test_renovar_tokens_token_revogado(self, mock_decodificar):
+        """Deve lançar 401 quando refresh token já foi revogado."""
+        mock_decodificar.return_value = {"sub": "user-123", "type": "refresh"}
+
+        mock_registro = Mock()
+        mock_registro.revogado = True
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_registro
+        self.mock_db.query.return_value = mock_query
+
+        with pytest.raises(HTTPException) as exc_info:
+            renovar_tokens(self.mock_db, refresh_token="refresh.revogado")
+
+        assert exc_info.value.status_code == 401
+        assert "já utilizado" in exc_info.value.detail
+
+    @patch('yumi.auth.auth_service.decodificar_token_jwt')
+    def test_renovar_tokens_nao_encontrado_no_banco(self, mock_decodificar):
+        """Deve lançar 401 quando refresh token não existe no banco."""
+        mock_decodificar.return_value = {"sub": "user-123", "type": "refresh"}
+
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = None
+        self.mock_db.query.return_value = mock_query
+
+        with pytest.raises(HTTPException) as exc_info:
+            renovar_tokens(self.mock_db, refresh_token="refresh.nao.existe")
+
+        assert exc_info.value.status_code == 401
 
     def test_obter_usuario_por_id_nao_encontrado(self):
         """Deve lançar HTTPException 404 quando ID não existe."""

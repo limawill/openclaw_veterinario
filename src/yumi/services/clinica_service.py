@@ -51,12 +51,26 @@ def create_clinica(db: Session, clinica_data: ClinicaCreate):
         raise
 
 
-def listar_clinicas(db: Session):
+def listar_clinicas(db: Session, clinica_id: str):
     """
     Regra de negócio para listar clínicas.
-    Retorna uma lista de clínicas ativas.
+    Filtra apenas a clínica do usuário logado (multi-tenant).
+    
+    Args:
+        db: Sessão do banco
+        clinica_id: ID da clínica do usuário (extraída do token)
+        
+    Returns:
+        Lista com a clínica específica se existir, vazia se não
     """
-    return db.query(Clinica).filter(Clinica.ativo == True).all()
+    logger.debug(f"Listando clínicas para clinica_id: {clinica_id}")
+    
+    clinicas = db.query(Clinica).filter(
+        Clinica.id == clinica_id,
+        Clinica.ativo == True
+    ).all()
+    
+    return clinicas
 
 
 def get_clinica_by_id(db: Session, clinica_id: str):

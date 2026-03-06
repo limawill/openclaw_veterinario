@@ -1,7 +1,9 @@
-from .base import Base, TimestampMixin
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String
 from sqlalchemy.orm import relationship
+
 from yumi.utils.uuid_generator import gerar_uuid
-from sqlalchemy import Column, String, Boolean, ForeignKey
+
+from .base import Base, TimestampMixin
 
 
 class Usuario(Base, TimestampMixin):
@@ -12,7 +14,9 @@ class Usuario(Base, TimestampMixin):
     clinica_id = Column(String(36), ForeignKey('clinica.id'), nullable=False)
     nome = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=False) 
     role = Column(String(100), nullable=False)
+    ultimo_login = Column(DateTime, nullable=True)
     ativo = Column(Boolean, default=True)
     
     # Relacionamentos

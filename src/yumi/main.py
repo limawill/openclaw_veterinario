@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from yumi.api.agendamento_routes import router as agendamento_router
 from yumi.api.clinica_func_routes import router as clinica_func_router
@@ -8,7 +10,9 @@ from yumi.api.integracao_routes import router as integracao_router
 from yumi.api.routes import router
 from yumi.api.usuario_routes import router as usuario_router
 from yumi.api.veterinario_routes import router as veterinario_router
+from yumi.auth.auth_routes import router as auth_router
 from yumi.core.config import settings
+from yumi.core.limiter import limiter
 from yumi.core.logger import logger
 
 # Criar aplicação FastAPI
@@ -20,6 +24,10 @@ app = FastAPI(
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
 )
 
+# Registrar rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
@@ -30,6 +38,7 @@ app.add_middleware(
 )
 
 # Incluir rotas
+app.include_router(auth_router) 
 app.include_router(router, prefix="")
 app.include_router(clinica_router, prefix="/api/v1/clinicas", tags=["Clínicas"])
 app.include_router(clinica_func_router, prefix="/api/v1/clinicas/{clinica_id}/funcionamento", tags=["Funcionamento"])

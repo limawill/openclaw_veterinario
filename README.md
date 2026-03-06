@@ -446,6 +446,36 @@ As configurações estão centralizadas em [src/yumi/core/config.py](src/yumi/co
 - `HOST` / `PORT` - Configurações do servidor
 - `SECRET_KEY` - Chave para autenticação
 
+## 🚧 Pendências Técnicas
+
+### 🔴 Token Blocklist no Logout (requer Redis)
+
+**Status:** Não implementado  
+**Prioridade:** Baixa (funcional para estudo, necessário antes de produção)
+
+**Problema atual:**  
+O logout revoga o `refresh_token` no banco, mas o `access_token` continua válido até seu vencimento natural (ex: 30 minutos). Um atacante com o access token capturado pode continuar usá-lo mesmo após o logout do usuário legítimo.
+
+**Solução planejada:**
+
+1. Adicionar campo `jti` (JWT ID — UUID único) no payload de cada `access_token` gerado em `security.py`
+2. Criar `src/yumi/auth/token_blocklist.py` com `bloquear_jti()` e `jti_esta_bloqueado()`
+3. No logout (`auth_routes.py`): extrair o `jti` do access token e adicioná-lo à blocklist
+4. Em `dependencies.py`: verificar o `jti` na blocklist a cada requisição autenticada
+
+**Armazenamento:**
+
+- **Agora (SQLite/dev):** `set` Python em memória — se perde ao reiniciar o servidor
+- **Produção (obrigatório):** Redis com TTL igual ao tempo de expiração do access token (`ACCESS_TOKEN_EXPIRE_MINUTES`)
+
+**Dependência a instalar quando for implementar:**
+
+```bash
+poetry add redis
+```
+
+---
+
 ## 🤝 Contribuindo
 
 1. Fork o projeto

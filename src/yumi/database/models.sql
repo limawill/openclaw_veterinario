@@ -12,6 +12,8 @@ DROP TABLE IF EXISTS integracao;
 
 DROP TABLE IF EXISTS veterinario;
 
+DROP TABLE IF EXISTS refresh_tokens;
+
 DROP TABLE IF EXISTS usuario;
 
 DROP TABLE IF EXISTS clinica_funcionamento;
@@ -52,16 +54,27 @@ CREATE TABLE IF NOT EXISTS usuario (
     clinica_id TEXT NOT NULL,
     nome VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
-    role VARCHAR(50) NOT NULL CHECK (
-        role IN ('admin', 'dev', 'atendente')
-    ),
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(100) NOT NULL,
+    ultimo_login TIMESTAMP,
     ativo BOOLEAN DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (clinica_id) REFERENCES clinica (id) ON DELETE CASCADE
 );
 
--- 2.4 TABELA VETERINARIO (depende de clinica)
+-- 2.4 TABELA REFRESH_TOKENS (depende de usuario)
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id TEXT PRIMARY KEY,
+    usuario_id TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL,
+    revogado BOOLEAN DEFAULT 0 NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (usuario_id) REFERENCES usuario (id) ON DELETE CASCADE
+);
+
+-- 2.6 TABELA VETERINARIO (depende de clinica)
 CREATE TABLE IF NOT EXISTS veterinario (
     id TEXT PRIMARY KEY,
     clinica_id TEXT NOT NULL,
@@ -74,7 +87,7 @@ CREATE TABLE IF NOT EXISTS veterinario (
     FOREIGN KEY (clinica_id) REFERENCES clinica (id) ON DELETE CASCADE
 );
 
--- 2.5 TABELA INTEGRACAO (depende de clinica)
+-- 2.7 TABELA INTEGRACAO (depende de clinica)
 CREATE TABLE IF NOT EXISTS integracao (
     id TEXT PRIMARY KEY,
     clinica_id TEXT NOT NULL,
@@ -92,7 +105,7 @@ CREATE TABLE IF NOT EXISTS integracao (
     FOREIGN KEY (clinica_id) REFERENCES clinica (id) ON DELETE CASCADE
 );
 
--- 2.6 TABELA AGENDAMENTO (depende de clinica e veterinario)
+-- 2.8 TABELA AGENDAMENTO (depende de clinica e veterinario)
 CREATE TABLE IF NOT EXISTS agendamento (
     id TEXT PRIMARY KEY,
     clinica_id TEXT NOT NULL,
@@ -139,6 +152,11 @@ CREATE INDEX IF NOT EXISTS idx_funcionamento_clinica ON clinica_funcionamento (c
 CREATE INDEX IF NOT EXISTS idx_usuario_clinica ON usuario (clinica_id);
 
 CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario (email);
+
+-- Índices para refresh_tokens
+CREATE INDEX IF NOT EXISTS idx_refresh_token_usuario ON refresh_tokens (usuario_id);
+
+CREATE INDEX IF NOT EXISTS idx_refresh_token_token ON refresh_tokens (token);
 
 -- Índices para veterinario
 CREATE INDEX IF NOT EXISTS idx_veterinario_clinica ON veterinario (clinica_id);

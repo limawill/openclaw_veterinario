@@ -2,15 +2,17 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
-from jose import JWTError
+from jose import JWTError, jwt
 
 from yumi.auth.security import (
+    criar_refresh_token,
     criar_token_jwt,
     decodificar_token_jwt,
     extrair_dados_usuario_do_token,
     gerar_hash_senha,
     verificar_senha,
 )
+from yumi.core.config import settings
 
 
 class TestHashSenha:
@@ -221,3 +223,70 @@ class TestExtrairDadosUsuario:
         assert dados["role"] == "admin"
         assert "email" not in dados  # Não deve incluir extras
         assert "nome" not in dados
+
+
+class TestCriarRefreshToken:
+    """Testes para a função criar_refresh_token."""
+
+    def setup_method(self):
+        self.payload = {
+            "sub": "user-123",
+            "clinica_id": "clinica-456",
+            "role": "admin",
+        }
+
+    def test_retorna_jwt_valido(self):
+        """Deve retornar uma string JWT com 3 partes."""
+        token = criar_refresh_token(self.payload)
+
+        assert isinstance(token, str)
+        assert len(token.split(".")) == 3
+
+    def test_payload_contem_type_refresh(self):
+        """O payload deve conter type='refresh' para distinguir do access token."""
+        token = criar_refresh_token(self.payload)
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+
+        assert payload["type"] == "refresh"
+
+    def test_payload_contem_dados_do_usuario(self):
+        """O payload deve conter sub, clinica_id e role."""
+        token = criar_refresh_token(self.payload)
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+
+        assert payload["sub"] == "user-123"
+        assert payload["clinica_id"] == "clinica-456"
+        assert payload["role"] == "admin"
+
+    def test_expiracao_maior_que_access_token(self):
+        """O refresh token deve ter validade configurada em REFRESH_TOKEN_EXPIRE_DAYS."""
+        antes = datetime.utcnow()
+        token = criar_refresh_token(self.payload)
+        depois = datetime.utcnow()
+
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+
+        exp = datetime.utcfromtimestamp(payload["exp"])
+        dias_minimo = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS - 1)
+        assert exp > antes + dias_minimo
+
+    def test_nao_modifica_payload_original(self):
+        """Não deve modificar o dict original passado como argumento."""
+        payload_original = self.payload.copy()
+        criar_refresh_token(self.payload)
+
+        assert self.payload == payload_original
+        assert "type" not in self.payload
+        assert "exp" not in self.payload

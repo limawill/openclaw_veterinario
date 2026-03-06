@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from yumi.auth.security import gerar_hash_senha
 from yumi.core.logger import logger
 from yumi.models.usuario import Usuario
 from yumi.utils.tools import Tools
@@ -36,7 +37,8 @@ def create_usuario(db: Session, usuario_data):
         email=usuario_data.email,
         nome=usuario_data.nome,
         role=usuario_data.role,
-        ativo=usuario_data.ativo
+        ativo=usuario_data.ativo,
+        password_hash=gerar_hash_senha(usuario_data.senha)
     )
     
     # 3. Persiste

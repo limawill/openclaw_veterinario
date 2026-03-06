@@ -49,24 +49,37 @@ class TestAuthRoutes:
 
     @patch('yumi.auth.auth_routes.autenticar_usuario')
     def test_login_sucesso(self, mock_autenticar):
-        """Deve retornar 200 e token quando credenciais corretas."""
-        # Arrange
-        mock_autenticar.return_value = "token.jwt.valido"
-        
+        """Deve retornar 200 com tokens e dados do usuário quando credenciais corretas."""
+        # Arrange — mock agora retorna dict (novo contrato)
+        mock_autenticar.return_value = {
+            "access_token": "token.jwt.valido",
+            "refresh_token": "refresh.jwt.valido",
+            "usuario": {
+                "id": "c320813a-abcc-458a-ad4a-8bd08aa27ec2",
+                "nome": "Usuário Teste",
+                "email": "teste@email.com",
+                "role": "admin",
+                "clinica_id": "554800c9-b74c-453d-885f-5482d30e9acd",
+            }
+        }
+
         login_data = {
             "username": "teste@email.com",
             "password": "senha123"
         }
-        
+
         # Act
         response = self.client.post("/api/v1/auth/login", data=login_data)
-        
+
         # Assert
         assert response.status_code == 200
-        assert "access_token" in response.json()
-        assert response.json()["access_token"] == "token.jwt.valido"
-        assert response.json()["token_type"] == "bearer"
-        
+        data = response.json()
+        assert data["access_token"] == "token.jwt.valido"
+        assert data["refresh_token"] == "refresh.jwt.valido"
+        assert data["token_type"] == "bearer"
+        assert data["usuario"]["email"] == "teste@email.com"
+        assert data["usuario"]["role"] == "admin"
+
         # Verifica se o serviço foi chamado corretamente
         mock_autenticar.assert_called_once_with(
             db=self.mock_db,
@@ -136,15 +149,23 @@ class TestAuthRoutes:
     # TESTES DO ENDPOINT /auth/logout
     # =====================================================
 
-    def test_logout(self):
-        """Endpoint logout deve retornar mensagem informativa."""
-        # Act
-        response = self.client.post("/api/v1/auth/logout")
-        
+    @patch('yumi.auth.auth_routes.revogar_refresh_token')
+    def test_logout(self, mock_revogar):
+        """Logout real deve revogar o refresh token e retornar 200."""
+        # Act — agora exige body com refresh_token
+        response = self.client.post(
+            "/api/v1/auth/logout",
+            json={"refresh_token": "refresh.jwt.valido"}
+        )
+
         # Assert
         assert response.status_code == 200
         assert "mensagem" in response.json()
         assert "Logout realizado" in response.json()["mensagem"]
+        mock_revogar.assert_called_once_with(
+            db=self.mock_db,
+            refresh_token="refresh.jwt.valido"
+        )
 
     # =====================================================
     # TESTES DO ENDPOINT /auth/me
@@ -195,3 +216,74 @@ class TestAuthRoutes:
         # Se o usuário existir, deve dar 200
         # Se não existir, vai dar 401 - ambos são aceitáveis
         assert response.status_code in [200, 401]
+
+    # =====================================================
+    # TESTES DO ENDPOINT /auth/refresh
+    # =====================================================
+
+    @patch('yumi.auth.auth_routes.renovar_tokens')
+    def test_refresh_sucesso(self, mock_renovar):
+        """Deve retornar novo par de tokens quando refresh token válido."""
+        mock_renovar.return_value = {
+            "access_token": "novo.access.token",
+            "refresh_token": "novo.refresh.token",
+        }
+
+        response = self.client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": "refresh.jwt.valido"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["access_token"] == "novo.access.token"
+        assert data["refresh_token"] == "novo.refresh.token"
+        assert data["token_type"] == "bearer"
+        mock_renovar.assert_called_once_with(
+            db=self.mock_db,
+            refresh_token="refresh.jwt.valido"
+        )
+
+    @patch('yumi.auth.auth_routes.renovar_tokens')
+    def test_refresh_token_invalido(self, mock_renovar):
+        """Deve retornar 401 quando refresh token é inválido ou expirado."""
+        from fastapi import HTTPException
+        mock_renovar.side_effect = HTTPException(
+            status_code=401,
+            detail="Refresh token inválido ou expirado"
+        )
+
+        response = self.client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": "token.invalido"}
+        )
+
+        assert response.status_code == 401
+        assert "inválido" in response.json()["detail"]
+
+    @patch('yumi.auth.auth_routes.renovar_tokens')
+    def test_refresh_token_ja_utilizado(self, mock_renovar):
+        """Deve retornar 401 quando refresh token já foi revogado."""
+        from fastapi import HTTPException
+        mock_renovar.side_effect = HTTPException(
+            status_code=401,
+            detail="Refresh token inválido ou já utilizado"
+        )
+
+        response = self.client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": "refresh.revogado"}
+        )
+
+        assert response.status_code == 401
+        assert "utilizado" in response.json()["detail"]
+
+    def test_refresh_sem_body(self):
+        """Deve retornar 422 quando body não é enviado."""
+        response = self.client.post("/api/v1/auth/refresh")
+        assert response.status_code == 422
+
+    def test_logout_sem_body(self):
+        """Deve retornar 422 quando logout é chamado sem body."""
+        response = self.client.post("/api/v1/auth/logout")
+        assert response.status_code == 422
