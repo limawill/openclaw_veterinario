@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from yumi.auth.dependencies import (
+    Usuario,
+    get_current_admin,
+    get_current_atendente,
+    verificar_mesma_clinica,
+)
 from yumi.core.database import get_db
 from yumi.core.logger import logger
 from yumi.schemas.schemas_usuario import UsuarioCreate, UsuarioUpdate
@@ -12,7 +18,8 @@ router = APIRouter()
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def criar_usuario(
     usuario_data: UsuarioCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """Cria um novo usuário."""
     logger.info(f"Requisição POST /usuarios - Criando usuário: {usuario_data.nome}")
@@ -37,35 +44,12 @@ async def criar_usuario(
         raise
 
 
-@router.get("/{usuario_id}", status_code=status.HTTP_200_OK)
-async def obter_usuario(
-    usuario_id: str,  # ← Parâmetro vindo da URL
-    db: Session = Depends(get_db)
-):
-    """Obtém um usuário específico por ID."""
-    logger.info(f"Requisição GET /usuarios/{usuario_id} - Obtendo usuário")
-    
-    try:
-        usuario = usuario_service.get_usuario_by_id(db, usuario_id)
-        return {
-            "mensagem": "Usuário encontrado",
-            "usuario": {
-                "id": usuario.id,
-                "nome": usuario.nome,
-                "email": usuario.email,
-                "cargo": usuario.role,
-                "created_at": usuario.created_at.isoformat() if usuario.created_at else None
-            }
-        }
-    except Exception:
-        logger.error(f"Erro ao obter usuário ID: {usuario_id}", exc_info=True)
-        raise
-
-
 @router.get("/clinica/{clinica_id}", status_code=status.HTTP_200_OK)
 async def listar_usuarios_por_clinica(
     clinica_id: str,  # ← Parâmetro vindo da URL
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """Lista todos os usuários de uma clínica específica."""
     logger.info(f"Requisição GET /usuarios/clinica/{clinica_id} - Listando usuários por clínica")
@@ -90,11 +74,38 @@ async def listar_usuarios_por_clinica(
         raise
 
 
+@router.get("/{usuario_id}", status_code=status.HTTP_200_OK)
+async def obter_usuario(
+    usuario_id: str,  # ← Parâmetro vindo da URL
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
+):
+    """Obtém um usuário específico por ID."""
+    logger.info(f"Requisição GET /usuarios/{usuario_id} - Obtendo usuário")
+    
+    try:
+        usuario = usuario_service.get_usuario_by_id(db, usuario_id)
+        return {
+            "mensagem": "Usuário encontrado",
+            "usuario": {
+                "id": usuario.id,
+                "nome": usuario.nome,
+                "email": usuario.email,
+                "cargo": usuario.role,
+                "created_at": usuario.created_at.isoformat() if usuario.created_at else None
+            }
+        }
+    except Exception:
+        logger.error(f"Erro ao obter usuário ID: {usuario_id}", exc_info=True)
+        raise
+
+
 @router.put("/{usuario_id}", status_code=status.HTTP_200_OK)
 async def atualizar_usuario(
     usuario_id: str,
     usuario_data: UsuarioUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """Atualiza um usuário existente."""
     logger.info(f"Requisição PUT /usuarios/{usuario_id} - Atualizando usuário")
@@ -120,7 +131,8 @@ async def atualizar_usuario(
 @router.delete("/{usuario_id}", status_code=status.HTTP_200_OK)
 async def excluir_usuario(
     usuario_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """Exclui (desativa) um usuário."""
     logger.info(f"Requisição DELETE /usuarios/{usuario_id} - Excluindo usuário")

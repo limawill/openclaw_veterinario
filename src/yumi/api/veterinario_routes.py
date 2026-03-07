@@ -4,6 +4,12 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from yumi.auth.dependencies import (
+    Usuario,
+    get_current_admin,
+    get_current_atendente,
+    verificar_mesma_clinica,
+)
 from yumi.core.database import get_db
 from yumi.core.logger import logger
 from yumi.schemas.schemas_agendamento import AgendamentoResponse
@@ -16,7 +22,8 @@ router = APIRouter()
 @router.post("/", status_code=status.HTTP_201_CREATED)
 async def criar_veterinario(
     veterinario_data: VeterinarioCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """Cria um novo veterinário."""
     logger.info(f"Requisição POST /veterinarios - Criando veterinário: {veterinario_data.nome}")
@@ -42,36 +49,12 @@ async def criar_veterinario(
         raise
 
 
-@router.get("/{veterinario_id}", status_code=status.HTTP_200_OK)
-async def obter_veterinario(
-    veterinario_id: str,  # ← Parâmetro vindo da URL
-    db: Session = Depends(get_db)
-):
-    """Obtém um veterinário específico por ID."""
-    logger.info(f"Requisição GET /veterinarios/{veterinario_id} - Obtendo veterinário")
-    
-    try:
-        veterinario = veterinario_service.get_veterinario_by_id(db, veterinario_id)
-        return {
-            "mensagem": "Veterinário encontrado",
-            "veterinario": {
-                "id": veterinario.id,
-                "nome": veterinario.nome,
-                "email": veterinario.email,
-                "especialidade": veterinario.especialidade,
-                "ativo": veterinario.ativo,
-                "created_at": veterinario.created_at.isoformat() if veterinario.created_at else None
-            }
-        }
-    except Exception:
-        logger.error(f"Erro ao obter veterinário ID: {veterinario_id}", exc_info=True)
-        raise
-
-
 @router.get("/clinica/{clinica_id}", status_code=status.HTTP_200_OK)
 async def listar_veterinarios_por_clinica(
-    clinica_id: str,  # ← Parâmetro vindo da URL
-    db: Session = Depends(get_db)
+    clinica_id: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """Lista todos os veterinários de uma clínica específica."""
     logger.info(f"Requisição GET /veterinarios/clinica/{clinica_id} - Listando veterinários por clínica")
@@ -96,11 +79,39 @@ async def listar_veterinarios_por_clinica(
         raise
 
 
+@router.get("/{veterinario_id}", status_code=status.HTTP_200_OK)
+async def obter_veterinario(
+    veterinario_id: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
+):
+    """Obtém um veterinário específico por ID."""
+    logger.info(f"Requisição GET /veterinarios/{veterinario_id} - Obtendo veterinário")
+    
+    try:
+        veterinario = veterinario_service.get_veterinario_by_id(db, veterinario_id)
+        return {
+            "mensagem": "Veterinário encontrado",
+            "veterinario": {
+                "id": veterinario.id,
+                "nome": veterinario.nome,
+                "email": veterinario.email,
+                "especialidade": veterinario.especialidade,
+                "ativo": veterinario.ativo,
+                "created_at": veterinario.created_at.isoformat() if veterinario.created_at else None
+            }
+        }
+    except Exception:
+        logger.error(f"Erro ao obter veterinário ID: {veterinario_id}", exc_info=True)
+        raise
+
+
 @router.put("/{veterinario_id}", status_code=status.HTTP_200_OK)
 async def atualizar_veterinario(
     veterinario_id: str,
     veterinario_data: VeterinarioUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """Atualiza um veterinário existente."""
     logger.info(f"Requisição PUT /veterinarios/{veterinario_id} - Atualizando veterinário")
@@ -126,7 +137,8 @@ async def atualizar_veterinario(
 @router.delete("/{veterinario_id}", status_code=status.HTTP_200_OK)
 async def excluir_veterinario(
     veterinario_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """Exclui (desativa) um veterinário."""
     logger.info(f"Requisição DELETE /veterinarios/{veterinario_id} - Excluindo veterinário")
@@ -152,7 +164,8 @@ async def listar_agendamentos_do_veterinario(
     apenas_ativos: bool = Query(True, description="Excluir cancelados?"),
     data_inicio: Optional[datetime] = Query(None, description="Filtrar a partir de"),
     data_fim: Optional[datetime] = Query(None, description="Filtrar até"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
 ):
     """Retorna todos os agendamentos de um veterinário específico."""
 

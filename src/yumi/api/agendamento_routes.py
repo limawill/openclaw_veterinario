@@ -3,9 +3,14 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from yumi.auth.dependencies import (
+    Usuario,
+    get_current_admin,
+    get_current_atendente,
+)
 from yumi.core.database import get_db
 from yumi.core.logger import logger
 from yumi.schemas.schemas_agendamento import (
@@ -30,7 +35,8 @@ router = APIRouter()
 )
 async def criar_agendamento(
     agendamento_data: AgendamentoCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
 ):
     """
     Cria um novo agendamento.
@@ -61,7 +67,8 @@ async def listar_agendamentos(
     origem: Optional[str] = Query(None, description="chatbot, manual, whatsapp, telegram"),
     skip: int = Query(0, ge=0, description="Registros para pular"),
     limit: int = Query(100, ge=1, le=500, description="Limite de registros"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
 ):
     """
     Lista agendamentos com diversos filtros opcionais.
@@ -100,7 +107,8 @@ async def listar_agendamentos(
 )
 async def obter_agendamento(
     agendamento_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
 ):
     """
     Retorna os detalhes de um agendamento específico.
@@ -120,7 +128,8 @@ async def obter_agendamento(
 async def atualizar_agendamento(
     agendamento_id: str,
     agendamento_data: AgendamentoUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
 ):
     """
     Atualiza um agendamento existente.
@@ -142,7 +151,8 @@ async def atualizar_agendamento(
 )
 async def cancelar_agendamento(
     agendamento_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
 ):
     """
     Cancela um agendamento (status = 'cancelado').
@@ -162,21 +172,14 @@ async def cancelar_agendamento(
 async def deletar_agendamento(
     agendamento_id: str,
     db: Session = Depends(get_db),
-    admin_key: str = Query(..., description="Chave de admin para deletar físico")
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """
-    Remove fisicamente um agendamento (apenas admin master).
+    Remove fisicamente um agendamento (apenas admin).
     
     - Uso restrito (correção de dados)
     - Para uso normal, prefira PATCH /cancelar
     """
-    # Validação simples de admin (depois melhorar com auth real)
-    if admin_key != "admin-secret-123":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Operação permitida apenas para admin"
-        )
-    
     agendamento = agendamento_service.get_agendamento_by_id(db, agendamento_id)
     db.delete(agendamento)
     db.commit()
@@ -195,7 +198,8 @@ async def deletar_agendamento(
 async def verificar_disponibilidade(
     veterinario_id: str = Query(..., description="ID do veterinário"),
     data: date = Query(..., description="Data para consulta (YYYY-MM-DD)"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente)
 ):
     """
     Retorna os horários ocupados para um veterinário em uma data específica.

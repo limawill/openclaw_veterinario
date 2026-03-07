@@ -1,6 +1,12 @@
 from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.orm import Session
 
+from yumi.auth.dependencies import (
+    Usuario,
+    get_current_admin,
+    get_current_atendente,
+    verificar_mesma_clinica,
+)
 from yumi.core.database import get_db
 from yumi.core.logger import logger
 from yumi.schemas.schemas_clinica_func import (
@@ -26,7 +32,9 @@ router = APIRouter()
 async def criar_horario(
     clinica_id: str,
     horario_data: ClinicaFuncionamentoCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """
     Adiciona um novo horário de funcionamento para a clínica.
@@ -57,7 +65,9 @@ async def criar_horario(
 )
 async def listar_horarios(
     clinica_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """
     Retorna todos os horários de funcionamento cadastrados para a clínica.
@@ -84,7 +94,9 @@ async def listar_horarios(
 async def obter_horario_por_dia(
     clinica_id: str,
     dia_semana: int = Path(..., ge=0, le=6, description="0=Dom a 6=Sáb"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """
     Retorna o horário de funcionamento para um dia específico.
@@ -102,10 +114,12 @@ async def obter_horario_por_dia(
     summary="Atualizar horário por ID"
 )
 async def atualizar_horario(
-    clinica_id: str,  # Mantido para consistência, mas não usado diretamente
+    clinica_id: str,
     horario_id: str,
     horario_data: ClinicaFuncionamentoUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """
     Atualiza um horário específico.
@@ -130,9 +144,11 @@ async def atualizar_horario(
     summary="Remover horário"
 )
 async def deletar_horario(
-    clinica_id: str,  # Mantido para consistência
+    clinica_id: str,
     horario_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """
     Remove um horário de funcionamento.
@@ -156,7 +172,9 @@ async def verificar_disponibilidade(
     clinica_id: str,
     dia_semana: int = Path(..., ge=0, le=6),
     hora: str = Path(..., pattern="^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """
     Verifica se um determinado horário está dentro do funcionamento da clínica.

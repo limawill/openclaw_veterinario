@@ -3,6 +3,12 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
+from yumi.auth.dependencies import (
+    Usuario,
+    get_current_admin,
+    get_current_atendente,
+    verificar_mesma_clinica,
+)
 from yumi.core.database import get_db
 from yumi.core.logger import logger
 from yumi.schemas.schemas_integracao import (
@@ -29,7 +35,8 @@ router = APIRouter()
 )
 async def criar_integracao(
     integracao_data: IntegracaoCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """
     Configura uma nova integração para uma clínica.
@@ -62,7 +69,8 @@ async def listar_integracoes(
     ativo: Optional[bool] = Query(None, description="Filtrar por status"),
     skip: int = Query(0, ge=0, description="Registros para pular"),
     limit: int = Query(100, ge=1, le=500, description="Limite de registros"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """
     Lista todas as integrações com filtros opcionais.
@@ -89,26 +97,7 @@ async def listar_integracoes(
     }
 
 # =====================================================
-# GET - Buscar integração por ID
-# =====================================================
-
-@router.get(
-    "/{integracao_id}",
-    response_model=IntegracaoResponse,
-    summary="Buscar integração por ID"
-)
-async def obter_integracao(
-    integracao_id: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Retorna os detalhes de uma integração específica.
-    """
-    logger.debug(f"Requisição GET /integracoes/{integracao_id}")
-    return integracao_service.get_integracao_by_id(db, integracao_id)
-
-# =====================================================
-# GET - Buscar integração por clínica e tipo
+# GET - Buscar integração por clínica e tipo (deve vir ANTES de /{integracao_id})
 # =====================================================
 
 @router.get(
@@ -119,7 +108,9 @@ async def obter_integracao(
 async def obter_integracao_por_clinica_tipo(
     clinica_id: str,
     tipo_servico: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),
+    _: None = Depends(verificar_mesma_clinica)
 ):
     """
     Retorna a integração de uma clínica para um tipo específico.
@@ -127,6 +118,64 @@ async def obter_integracao_por_clinica_tipo(
     """
     logger.debug(f"Requisição GET /integracoes/clinica/{clinica_id}/tipo/{tipo_servico}")
     return integracao_service.get_integracao_by_clinica_and_tipo(db, clinica_id, tipo_servico)
+
+# =====================================================
+# GET - Estatísticas de integrações (deve vir ANTES de /{integracao_id})
+# =====================================================
+
+@router.get(
+    "/estatisticas",
+    summary="Estatísticas de integrações"
+)
+async def estatisticas_integracoes(
+    clinica_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
+):
+    """
+    Retorna estatísticas sobre as integrações.
+    """
+    logger.debug("Requisição GET /integracoes/estatisticas")
+    
+    query = db.query(integracao_service.Integracao)
+    if clinica_id:
+        query = query.filter(integracao_service.Integracao.clinica_id == clinica_id)
+    
+    total = query.count()
+    ativas = query.filter(integracao_service.Integracao.ativo == True).count()
+    
+    tipos = {}
+    for tipo in ['google_calendar', 'whatsapp', 'telegram', 'outlook']:
+        count = query.filter(integracao_service.Integracao.tipo_servico == tipo).count()
+        if count > 0:
+            tipos[tipo] = count
+    
+    return {
+        "total_integracoes": total,
+        "ativas": ativas,
+        "inativas": total - ativas,
+        "por_tipo": tipos
+    }
+
+# =====================================================
+# GET - Buscar integração por ID
+# =====================================================
+
+@router.get(
+    "/{integracao_id}",
+    response_model=IntegracaoResponse,
+    summary="Buscar integração por ID"
+)
+async def obter_integracao(
+    integracao_id: str,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
+):
+    """
+    Retorna os detalhes de uma integração específica.
+    """
+    logger.debug(f"Requisição GET /integracoes/{integracao_id}")
+    return integracao_service.get_integracao_by_id(db, integracao_id)
 
 # =====================================================
 # PUT - Atualizar integração
@@ -140,7 +189,8 @@ async def obter_integracao_por_clinica_tipo(
 async def atualizar_integracao(
     integracao_id: str,
     integracao_data: IntegracaoUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """
     Atualiza os dados de uma integração existente.
@@ -164,7 +214,8 @@ async def atualizar_integracao(
 async def ativar_integracao(
     integracao_id: str,
     ativo: bool = Query(..., description="True para ativar, False para desativar"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """
     Ativa ou desativa uma integração.
@@ -185,7 +236,8 @@ async def ativar_integracao(
 )
 async def deletar_integracao(
     integracao_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """
     Remove permanentemente uma integração.
@@ -208,7 +260,8 @@ async def deletar_integracao(
 async def testar_integracao(
     integracao_id: str,
     teste_data: Optional[IntegracaoTesteRequest] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_admin)
 ):
     """
     Testa se a integração está funcionando corretamente.
@@ -226,40 +279,3 @@ async def testar_integracao(
         credenciais_teste
     )
 
-# =====================================================
-# GET - Estatísticas de integrações (opcional)
-# =====================================================
-
-@router.get(
-    "/estatisticas",
-    summary="Estatísticas de integrações"
-)
-async def estatisticas_integracoes(
-    clinica_id: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
-):
-    """
-    Retorna estatísticas sobre as integrações.
-    """
-    logger.debug("Requisição GET /integracoes/estatisticas")
-    
-    query = db.query(integracao_service.Integracao)
-    if clinica_id:
-        query = query.filter(integracao_service.Integracao.clinica_id == clinica_id)
-    
-    total = query.count()
-    ativas = query.filter(integracao_service.Integracao.ativo == True).count()
-    
-    # Contagem por tipo
-    tipos = {}
-    for tipo in ['google_calendar', 'whatsapp', 'telegram', 'outlook']:
-        count = query.filter(integracao_service.Integracao.tipo_servico == tipo).count()
-        if count > 0:
-            tipos[tipo] = count
-    
-    return {
-        "total_integracoes": total,
-        "ativas": ativas,
-        "inativas": total - ativas,
-        "por_tipo": tipos
-    }
