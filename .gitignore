@@ -209,3 +209,5 @@ __marimo__/
 
 .vscode/
 src/yumi/database/seed.sql
+.db
+src/yumi/database/yumi.db
