@@ -112,7 +112,11 @@ class YumiAgent:
     # MÉTODO PRINCIPAL
     # =====================================================
 
-    def handle_message(self, message: str) -> dict[str, Any]:
+    def handle_message(
+        self,
+        message: str,
+        historico: list[dict] | None = None,
+    ) -> dict[str, Any]:
         """
         Ponto de entrada do agente.
 
@@ -122,6 +126,13 @@ class YumiAgent:
         3. Chama o handler correto
         4. Retorna resposta estruturada
 
+        Args:
+            message:   Texto enviado pelo usuário.
+            historico: Histórico das últimas mensagens da sessão no formato
+                       [{"role": "user"|"assistant", "message": "..."}].
+                       Fase 1 (MVP): ignorado — detecção por keyword não usa contexto.
+                       Fase 2 (LLM): será passado como context window ao modelo.
+
         Retorna sempre um dict com:
         {
             "intencao": str,
@@ -129,7 +140,10 @@ class YumiAgent:
             "dados": dict | None    ← dados extras (para o frontend usar)
         }
         """
-        logger.info(f"[YumiAgent] Mensagem recebida: '{message}'")
+        logger.info(
+            f"[YumiAgent] Mensagem recebida: '{message}' "
+            f"| Histórico: {len(historico or [])} msgs"
+        )
 
         mensagem_normalizada = message.lower().strip()
         intencao = self._detectar_intencao(mensagem_normalizada)

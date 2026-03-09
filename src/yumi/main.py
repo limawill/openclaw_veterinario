@@ -4,6 +4,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from yumi.api.agendamento_routes import router as agendamento_router
+from yumi.api.agent_routes import router as agent_router
 from yumi.api.clinica_func_routes import router as clinica_func_router
 from yumi.api.clinica_routes import router as clinica_router
 from yumi.api.integracao_routes import router as integracao_router
@@ -46,6 +47,7 @@ app.include_router(usuario_router, prefix="/api/v1/usuarios", tags=["Usuários"]
 app.include_router(veterinario_router, prefix="/api/v1/veterinarios", tags=["Veterinários"])
 app.include_router(agendamento_router, prefix="/api/v1/agendamentos", tags=["Agendamentos"])
 app.include_router(integracao_router, prefix="/api/v1/integracoes", tags=["Integrações"])
+app.include_router(agent_router, prefix="/api/v1/agent", tags=["Yumi Agent"])
 
 
 # Eventos de startup/shutdown

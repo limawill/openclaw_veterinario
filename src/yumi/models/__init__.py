@@ -1,13 +1,14 @@
 """Pacote com modelos ORM e schemas de dados da aplicação."""
 
+from .agendamento import Agendamento
+from .base import Base, TimestampMixin
+from .chat import ChatMessage, ChatSession
 from .clinica import Clinica
 from .clinica_funcionamento import ClinicaFuncionamento
-from .usuario import Usuario
-from .veterinario import Veterinario
-from .agendamento import Agendamento
 from .integracao import Integracao
 from .refresh_token import RefreshToken
-from .base import Base, TimestampMixin
+from .usuario import Usuario
+from .veterinario import Veterinario
 
 __all__ = [
     "Base",
@@ -19,4 +20,6 @@ __all__ = [
     "Agendamento",
     "Integracao",
     "RefreshToken",
+    "ChatSession",
+    "ChatMessage",
 ]

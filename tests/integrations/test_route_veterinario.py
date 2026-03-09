@@ -3,6 +3,12 @@ from unittest.mock import Mock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from yumi.auth.dependencies import (
+    get_current_admin,
+    get_current_atendente,
+    verificar_mesma_clinica,
+)
+from yumi.core.database import get_db
 from yumi.main import app
 from yumi.models.veterinario import Veterinario
 
@@ -28,6 +34,31 @@ def mock_veterinario():
 
 class TestVeterinarioRoutes:
     """Testes para endpoints de veterinários."""
+
+    def setup_method(self):
+        """Configura mocks de autenticação antes de cada teste."""
+        self.mock_db = Mock()
+
+        self.mock_admin = Mock()
+        self.mock_admin.id = "user-admin-123"
+        self.mock_admin.role = "admin"
+        self.mock_admin.clinica_id = "751f3cba-fe70-4da3-b8ab-f7029196b352"
+        self.mock_admin.ativo = True
+
+        self.mock_atendente = Mock()
+        self.mock_atendente.id = "user-atend-123"
+        self.mock_atendente.role = "atendente"
+        self.mock_atendente.clinica_id = "751f3cba-fe70-4da3-b8ab-f7029196b352"
+        self.mock_atendente.ativo = True
+
+        app.dependency_overrides[get_db] = lambda: self.mock_db
+        app.dependency_overrides[get_current_admin] = lambda: self.mock_admin
+        app.dependency_overrides[get_current_atendente] = lambda: self.mock_atendente
+        app.dependency_overrides[verificar_mesma_clinica] = lambda: None
+
+    def teardown_method(self):
+        """Limpa os overrides após cada teste."""
+        app.dependency_overrides.clear()
     
     @patch('yumi.api.veterinario_routes.veterinario_service.create_veterinario')
     def test_criar_veterinario_sucesso(self, mock_create, client, mock_veterinario):

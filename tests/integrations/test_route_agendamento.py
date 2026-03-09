@@ -4,6 +4,11 @@ from unittest.mock import Mock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from yumi.auth.dependencies import (
+    get_current_admin,
+    get_current_atendente,
+)
+from yumi.core.database import get_db
 from yumi.main import app
 
 
@@ -15,7 +20,31 @@ def client():
 
 class TestAgendamentoRoutes:
     """Testes para endpoints de agendamentos."""
-    
+
+    def setup_method(self):
+        """Configura mocks de autenticação antes de cada teste."""
+        self.mock_db = Mock()
+
+        self.mock_admin = Mock()
+        self.mock_admin.id = "user-admin-123"
+        self.mock_admin.role = "admin"
+        self.mock_admin.clinica_id = "f7fc5f9b-6d8e-430d-9196-adc6d1af5887"
+        self.mock_admin.ativo = True
+
+        self.mock_atendente = Mock()
+        self.mock_atendente.id = "user-atend-123"
+        self.mock_atendente.role = "atendente"
+        self.mock_atendente.clinica_id = "f7fc5f9b-6d8e-430d-9196-adc6d1af5887"
+        self.mock_atendente.ativo = True
+
+        app.dependency_overrides[get_db] = lambda: self.mock_db
+        app.dependency_overrides[get_current_admin] = lambda: self.mock_admin
+        app.dependency_overrides[get_current_atendente] = lambda: self.mock_atendente
+
+    def teardown_method(self):
+        """Limpa os overrides após cada teste."""
+        app.dependency_overrides.clear()
+
     @patch('yumi.api.agendamento_routes.agendamento_service.criar_agendamento')
     def test_criar_agendamento_sucesso(self, mock_criar, client):
         """Testa POST /api/v1/agendamentos."""

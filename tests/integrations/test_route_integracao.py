@@ -4,6 +4,12 @@ from unittest.mock import Mock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from yumi.auth.dependencies import (
+    get_current_admin,
+    get_current_atendente,
+    verificar_mesma_clinica,
+)
+from yumi.core.database import get_db
 from yumi.main import app
 
 
@@ -15,7 +21,32 @@ def client():
 
 class TestIntegracaoRoutes:
     """Testes para endpoints de integrações."""
-    
+
+    def setup_method(self):
+        """Configura mocks de autenticação antes de cada teste."""
+        self.mock_db = Mock()
+
+        self.mock_admin = Mock()
+        self.mock_admin.id = "user-admin-123"
+        self.mock_admin.role = "admin"
+        self.mock_admin.clinica_id = "385f65ba-cf4c-4405-bc1b-39fd7683b25f"
+        self.mock_admin.ativo = True
+
+        self.mock_atendente = Mock()
+        self.mock_atendente.id = "user-atend-123"
+        self.mock_atendente.role = "atendente"
+        self.mock_atendente.clinica_id = "385f65ba-cf4c-4405-bc1b-39fd7683b25f"
+        self.mock_atendente.ativo = True
+
+        app.dependency_overrides[get_db] = lambda: self.mock_db
+        app.dependency_overrides[get_current_admin] = lambda: self.mock_admin
+        app.dependency_overrides[get_current_atendente] = lambda: self.mock_atendente
+        app.dependency_overrides[verificar_mesma_clinica] = lambda: None
+
+    def teardown_method(self):
+        """Limpa os overrides após cada teste."""
+        app.dependency_overrides.clear()
+
     @patch('yumi.api.integracao_routes.integracao_service.criar_integracao')
     def test_criar_integracao_google_calendar(self, mock_criar, client):
         """Testa POST /api/v1/integracoes - Google Calendar."""

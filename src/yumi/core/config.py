@@ -1,5 +1,6 @@
-from pydantic import ConfigDict
 from functools import lru_cache
+
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -20,6 +21,13 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 9100
     RELOAD: bool = True
+    
+    ###########################################
+    #           SERVIDOR OPENCLAW             #
+    ###########################################
+    CLAW_URL: str = "0.0.0.0"
+    CLAW_PORT: int = 9100
+    CLAW_TIMEOUT: int = 10
     
     ###########################################
     #              BANCO DE DADOS             #
