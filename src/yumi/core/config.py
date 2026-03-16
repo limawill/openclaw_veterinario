@@ -25,8 +25,8 @@ class Settings(BaseSettings):
     ###########################################
     #           SERVIDOR OPENCLAW             #
     ###########################################
-    CLAW_URL: str = "0.0.0.0"
-    CLAW_PORT: int = 9100
+    CLAW_URL: str = "http://100.87.246.16"
+    CLAW_PORT: int = 18789
     CLAW_TIMEOUT: int = 10
     
     ###########################################
