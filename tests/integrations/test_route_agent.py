@@ -1,8 +1,8 @@
-"""
-test_route_agent.py — Testes de integração para POST /api/v1/agent/chat.
-"""
+"""test_route_agent.py — Testes de integração para POST /api/v1/agent/chat."""
 
-from unittest.mock import MagicMock, patch
+# pylint: disable=attribute-defined-outside-init,redefined-outer-name
+
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,8 +16,8 @@ OUTRA_CLINICA_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 CHAT_URL = "/api/v1/agent/chat"
 
 
-@pytest.fixture
-def client():
+@pytest.fixture(name="client")
+def _client():
     return TestClient(app)
 
 
@@ -36,7 +36,9 @@ class TestChatRoute:
         self.mock_usuario.ativo = True
 
         app.dependency_overrides[get_db] = lambda: self.mock_db
-        app.dependency_overrides[get_current_atendente] = lambda: self.mock_usuario
+        app.dependency_overrides[get_current_atendente] = (
+            lambda: self.mock_usuario
+        )
 
     def teardown_method(self):
         app.dependency_overrides.clear()
@@ -100,19 +102,21 @@ class TestChatRoute:
         assert response.status_code == 422
 
     # =====================================================
-    # INTENÇÕES — mock do YumiAgent
+    # FLUXO DA ROTA — delegação ao serviço
     # =====================================================
 
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_listar_veterinarios(self, mock_agent_class, client):
-        """Deve chamar o agente e retornar resposta para intenção de listar."""
-        mock_agent = MagicMock()
-        mock_agent.handle_message.return_value = {
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_listar_veterinarios(self, mock_process_chat, client):
+        """Deve delegar ao serviço e retornar resposta de listar."""
+        mock_process_chat.return_value = {
             "intencao": "listar_veterinarios",
             "resposta": "Temos 2 veterinários disponíveis.",
             "dados": {"total": 2, "veterinarios": []},
+            "session_id": "sessao-123",
         }
-        mock_agent_class.return_value = mock_agent
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,
@@ -124,31 +128,28 @@ class TestChatRoute:
         assert data["intencao"] == "listar_veterinarios"
         assert "veterinários" in data["resposta"]
         assert data["dados"]["total"] == 2
-        # Verifica que 'session_id' está presente no response
-        assert "session_id" in data
-        assert data["session_id"] is not None
+        assert data["session_id"] == "sessao-123"
+        mock_process_chat.assert_awaited_once()
+        called_kwargs = mock_process_chat.await_args.kwargs
+        assert called_kwargs["db"] == self.mock_db
+        assert called_kwargs["clinica_id"] == CLINICA_ID
+        assert called_kwargs["usuario_id"] == self.mock_usuario.id
+        assert called_kwargs["mensagem"] == "Quais veterinários vocês têm?"
+        assert called_kwargs["session_id"] is None
+        assert called_kwargs["agent_factory"].__name__ == "YumiAgent"
 
-        # Verifica que o agente foi instanciado com os parâmetros corretos
-        mock_agent_class.assert_called_once_with(
-            clinica_id=CLINICA_ID,
-            db=self.mock_db
-        )
-        # Verifica que handle_message foi chamado com histórico (vazio para sessão nova)
-        mock_agent.handle_message.assert_called_once_with(
-            "Quais veterinários vocês têm?",
-            historico=[]
-        )
-
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_ver_agendamentos(self, mock_agent_class, client):
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_ver_agendamentos(self, mock_process_chat, client):
         """Deve retornar resposta para intenção de ver agendamentos."""
-        mock_agent = MagicMock()
-        mock_agent.handle_message.return_value = {
+        mock_process_chat.return_value = {
             "intencao": "ver_agendamentos",
             "resposta": "Hoje temos 3 consultas agendadas.",
             "dados": {"total": 3, "agendamentos": []},
+            "session_id": "sessao-123",
         }
-        mock_agent_class.return_value = mock_agent
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,
@@ -158,16 +159,20 @@ class TestChatRoute:
         assert response.status_code == 200
         assert response.json()["intencao"] == "ver_agendamentos"
 
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_intencao_desconhecida(self, mock_agent_class, client):
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_intencao_desconhecida(self, mock_process_chat, client):
         """Deve retornar 200 mesmo para intenção desconhecida."""
-        mock_agent = MagicMock()
-        mock_agent.handle_message.return_value = {
+        mock_process_chat.return_value = {
             "intencao": "desconhecido",
-            "resposta": "Não entendi. Posso ajudar com agendamentos e veterinários.",
+            "resposta": (
+                "Não entendi. Posso ajudar com agendamentos e veterinários."
+            ),
             "dados": None,
+            "session_id": "sessao-123",
         }
-        mock_agent_class.return_value = mock_agent
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,
@@ -179,16 +184,18 @@ class TestChatRoute:
         assert data["intencao"] == "desconhecido"
         assert data["dados"] is None
 
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_dados_pode_ser_none(self, mock_agent_class, client):
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_dados_pode_ser_none(self, mock_process_chat, client):
         """Deve retornar 200 quando agente retorna dados=None."""
-        mock_agent = MagicMock()
-        mock_agent.handle_message.return_value = {
+        mock_process_chat.return_value = {
             "intencao": "desconhecido",
             "resposta": "Não entendi sua solicitação.",
             "dados": None,
+            "session_id": "sessao-123",
         }
-        mock_agent_class.return_value = mock_agent
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,
@@ -202,16 +209,18 @@ class TestChatRoute:
     # SESSÃO DE CONVERSA
     # =====================================================
 
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_response_contem_session_id(self, mock_agent_class, client):
-        """Toda resposta deve conter session_id (nova sessão criada automaticamente)."""
-        mock_agent = MagicMock()
-        mock_agent.handle_message.return_value = {
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_response_contem_session_id(self, mock_process_chat, client):
+        """Toda resposta deve conter session_id na resposta da rota."""
+        mock_process_chat.return_value = {
             "intencao": "desconhecido",
             "resposta": "Olá!",
             "dados": None,
+            "session_id": "sessao-gerada",
         }
-        mock_agent_class.return_value = mock_agent
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,
@@ -221,19 +230,24 @@ class TestChatRoute:
         assert response.status_code == 200
         data = response.json()
         assert "session_id" in data
-        assert data["session_id"] is not None
-        assert len(data["session_id"]) > 0
+        assert data["session_id"] == "sessao-gerada"
 
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_sem_session_id_cria_nova_sessao(self, mock_agent_class, client):
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_sem_session_id_cria_nova_sessao(
+        self,
+        mock_process_chat,
+        client,
+    ):
         """Quando session_id não enviado, gera novo session_id na resposta."""
-        mock_agent = MagicMock()
-        mock_agent.handle_message.return_value = {
+        mock_process_chat.return_value = {
             "intencao": "desconhecido",
             "resposta": "Olá!",
             "dados": None,
+            "session_id": "12345678-1234-1234-1234-123456789012",
         }
-        mock_agent_class.return_value = mock_agent
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,
@@ -247,14 +261,25 @@ class TestChatRoute:
         assert isinstance(session_id, str)
         assert len(session_id) == 36  # formato UUID
 
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_session_id_invalido_retorna_404(self, mock_agent_class, client):
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_session_id_invalido_retorna_404(
+        self,
+        mock_process_chat,
+        client,
+    ):
         """Quando session_id enviado não existe no banco, deve retornar 404."""
-        # Configura o mock para simular sessão não encontrada
-        self.mock_db.query.return_value.filter.return_value.first.return_value = None
+        from fastapi import HTTPException
 
-        mock_agent = MagicMock()
-        mock_agent_class.return_value = mock_agent
+        mock_process_chat.side_effect = HTTPException(
+            status_code=404,
+            detail=(
+                "Sessão 'session-que-nao-existe' não encontrada para esta "
+                "clínica."
+            ),
+        )
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,
@@ -263,29 +288,26 @@ class TestChatRoute:
         })
 
         assert response.status_code == 404
-        # O agente NÃO deve ser chamado quando a sessão não existe
-        mock_agent.handle_message.assert_not_called()
+        mock_process_chat.assert_awaited_once()
 
-    @patch("yumi.api.agent_routes.YumiAgent")
-    def test_chat_com_session_id_valido_reutiliza_sessao(self, mock_agent_class, client):
-        """Quando session_id válido enviado, deve retornar o mesmo session_id."""
+    @patch(
+        "yumi.api.agent_routes.process_chat_message",
+        new_callable=AsyncMock,
+    )
+    def test_chat_com_session_id_valido_reutiliza_sessao(
+        self,
+        mock_process_chat,
+        client,
+    ):
+        """Quando session_id válido é enviado, a rota o preserva."""
         existing_session_id = "sessao-existente-uuid-1234567890a"
 
-        mock_session = MagicMock()
-        mock_session.id = existing_session_id
-
-        # Configura first() para retornar a sessão existente
-        self.mock_db.query.return_value.filter.return_value.first.return_value = mock_session
-        # Configura all() para retornar histórico vazio
-        self.mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
-
-        mock_agent = MagicMock()
-        mock_agent.handle_message.return_value = {
+        mock_process_chat.return_value = {
             "intencao": "desconhecido",
             "resposta": "Continuando nossa conversa!",
             "dados": None,
+            "session_id": existing_session_id,
         }
-        mock_agent_class.return_value = mock_agent
 
         response = client.post(CHAT_URL, json={
             "clinica_id": CLINICA_ID,

@@ -1,497 +1,264 @@
-# 🐾 Yumi Agent - Sistema Veterinário
+# Yumi Agent
 
-Agente virtual inteligente para gestão de clínicas veterinárias, desenvolvido com FastAPI e SQLite.
+Backend FastAPI para operação de clínica veterinária com:
 
-## 📋 Sobre o Projeto
+- gestão de clínicas, usuários, veterinários e agendamentos
+- autenticação JWT com refresh token
+- integrações externas (Google Calendar, WhatsApp, Telegram)
+- agente conversacional com memória de sessão
+- integração com OpenClaw (WebSocket), com fallback local
+- resposta em modo clássico (`/chat`) e streaming (`/chat/stream`)
 
-O **Yumi Agent** é um sistema completo para gerenciamento de clínicas veterinárias, oferecendo funcionalidades de agendamento, gestão de veterinários, clientes e integrações com serviços externos como Google Calendar, WhatsApp e Telegram.
+## Visão Geral
 
-## 🚀 Tecnologias
+O projeto segue arquitetura em camadas:
 
-- **Python 3.12+**
-- **FastAPI** - Framework web moderno e rápido
-- **SQLite** - Banco de dados leve e eficiente
-- **Pydantic** - Validação de dados
-- **Uvicorn** - Servidor ASGI de alta performance
-- **SQLAlchemy** - ORM para banco de dados
+- `api`: rotas HTTP e validações de entrada/segurança
+- `services`: regras de negócio e orquestração
+- `auth`: autenticação, autorização e dependências de acesso
+- `models` e `schemas`: persistência e contratos de dados
+- `core`: configuração, banco, logger e limiter
 
-## 📁 Estrutura do Projeto
+Fluxo do chat (`/api/v1/agent/chat`):
 
-```
+1. valida usuário e isolamento multi-tenant
+2. persiste mensagem do usuário
+3. tenta OpenClaw se `USE_OPENCLAW=true`
+4. em falha, usa `YumiAgent` local
+5. persiste resposta final e retorna `ChatResponse`
+
+Fluxo do streaming (`/api/v1/agent/chat/stream`):
+
+1. valida usuário e isolamento multi-tenant
+2. persiste mensagem do usuário
+3. stream de chunks via OpenClaw quando habilitado
+4. fallback local em chunk único quando necessário
+5. persiste concatenação dos chunks enviados
+
+## Stack Técnica
+
+- Python 3.12
+- FastAPI
+- SQLAlchemy
+- Pydantic / pydantic-settings
+- SQLite (padrão)
+- Uvicorn
+- SlowAPI (rate limit)
+- pytest / pytest-asyncio / httpx
+
+## Estrutura do Repositório
+
+```text
 openclaw_veterinario/
-├── src/
-│   └── yumi/
-│       ├── api/           # Rotas da API
-│       ├── core/          # Configurações e banco de dados
-│       ├── database/      # Modelos SQL e inicialização
-│       ├── models/        # Schemas Pydantic
-│       └── utils/         # Utilitários
-├── logs/                  # Arquivo de logs
-├── pyproject.toml         # Dependências do projeto
-├── run.py                 # Script de inicialização
+├── src/yumi/
+│   ├── api/
+│   ├── agents/
+│   ├── auth/
+│   ├── core/
+│   ├── database/
+│   ├── llm/
+│   ├── models/
+│   ├── schemas/
+│   ├── services/
+│   └── utils/
+├── tests/
+│   ├── integrations/
+│   └── units/
+├── pyproject.toml
 └── README.md
 ```
 
-## 🔧 Instalação
+## Configuração
 
-### 1. Clone o repositório
+As configurações ficam em `src/yumi/core/config.py` e podem ser sobrescritas por `.env`.
+
+Principais variáveis:
+
+```env
+APP_NAME=Yumi Agent
+APP_VERSION=0.1.0
+ENVIRONMENT=development
+
+HOST=0.0.0.0
+PORT=9100
+RELOAD=true
+
+DATABASE_URL=sqlite:///./src/yumi/database/yumi.db
+DATABASE_ECHO=false
+
+SECRET_KEY=dev-secret-key-change-in-production
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
+
+CLAW_URL=http://100.87.246.16
+CLAW_PORT=18789
+CLAW_TIMEOUT=10
+USE_OPENCLAW=false
+```
+
+## Instalação
+
+### 1) Clonar
 
 ```bash
-git clone <repository-url>
+git clone <url-do-repositorio>
 cd openclaw_veterinario
 ```
 
-### 2. Instale as dependências
+### 2) Ambiente virtual e dependências
 
-**Usando pip:**
+Opção com `venv` + `pip`:
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -U pip
 pip install -e .
 ```
 
-**Usando poetry:**
+Opção com Poetry:
 
 ```bash
 poetry install
+poetry shell
 ```
 
-### 3. Configure as variáveis de ambiente (opcional)
-
-Crie um arquivo `.env` na raiz do projeto:
-
-```env
-DATABASE_URL=sqlite:///./src/yumi/database/yumi.db
-HOST=0.0.0.0
-PORT=9100
-ENVIRONMENT=development
-SECRET_KEY=your-secret-key-here
-```
-
-### 4. Inicialize o banco de dados
+### 3) Inicializar banco
 
 ```bash
-cd src/yumi/database
-python init_db.py
+PYTHONPATH=src python src/yumi/database/init_db.py
 ```
 
-Isso criará todas as tabelas necessárias. Você pode optar por adicionar dados de exemplo quando solicitado.
-
-## ▶️ Como Usar
-
-### Iniciar o servidor
-
-**Método 1 - Script run.py:**
+## Execução
 
 ```bash
-python run.py
+PYTHONPATH=src uvicorn yumi.main:app --host 0.0.0.0 --port 9100 --reload
 ```
 
-**Método 2 - Diretamente com uvicorn:**
+Endpoints úteis:
+
+- Swagger: `http://localhost:9100/docs`
+- ReDoc: `http://localhost:9100/redoc`
+- Health: `http://localhost:9100/health`
+
+## Endpoints Principais
+
+Base principal:
+
+- `GET /`
+- `GET /health`
+- `GET /info/python`
+- `GET /info/sqlite`
+
+Autenticação (`/api/v1/auth`):
+
+- `POST /login`
+- `POST /refresh`
+- `POST /logout`
+- `GET /me`
+
+Domínio:
+
+- Clínicas: `/api/v1/clinicas`
+- Funcionamento: `/api/v1/clinicas/{clinica_id}/funcionamento`
+- Usuários: `/api/v1/usuarios`
+- Veterinários: `/api/v1/veterinarios`
+- Agendamentos: `/api/v1/agendamentos`
+- Integrações: `/api/v1/integracoes`
+
+Agente (`/api/v1/agent`):
+
+- `POST /chat` (resposta única)
+- `POST /chat/stream` (stream de texto)
+
+## Exemplos de Uso
+
+### Login
 
 ```bash
-uvicorn yumi.main:app --host 0.0.0.0 --port 9100 --reload
+curl -X POST "http://localhost:9100/api/v1/auth/login" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=admin@clinica.com" \
+  -d "password=123456"
 ```
 
-O servidor estará disponível em: `http://localhost:9100`
-
-### Acessar a documentação
-
-- **Swagger UI**: http://localhost:9100/docs
-- **ReDoc**: http://localhost:9100/redoc
-
-## 🗄️ Banco de Dados
-
-### Estrutura
-
-O sistema possui as seguintes tabelas principais:
-
-- **clinica** - Dados das clínicas
-- **clinica_funcionamento** - Horários de funcionamento
-- **usuario** - Usuários do sistema (admin, atendente, dev)
-- **veterinario** - Cadastro de veterinários
-- **agendamento** - Consultas agendadas
-- **integracao** - Integrações externas (Google Calendar, WhatsApp, Telegram)
-
-### Reinicializar o banco
-
-Para resetar o banco de dados:
+### Chat padrão
 
 ```bash
-cd src/yumi/database
-python init_db.py
+curl -X POST "http://localhost:9100/api/v1/agent/chat" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clinica_id": "170a7399-4b47-4ad1-a10b-a8ac69b4a166",
+    "mensagem": "Meu cachorro está vomitando há dois dias"
+  }'
 ```
 
-## 🔌 Endpoints da API
+### Chat streaming
 
-### Principais Rotas
-
-| Método | Endpoint  | Descrição              |
-| ------ | --------- | ---------------------- |
-| GET    | `/`       | Informações do projeto |
-| GET    | `/health` | Health check da API    |
-| GET    | `/docs`   | Documentação Swagger   |
-
-### Exemplo de Resposta
-
-**GET /**
-
-```json
-{
-  "name": "Yumi Agent",
-  "version": "0.1.0",
-  "description": "Agente virtual para clínica veterinária",
-  "environment": "development",
-  "python_version": "3.12.0",
-  "dependencies": [...]
-}
-```
-
-## 🛠️ Desenvolvimento
-
-### Ferramentas de Dev
-
-- **Black** - Formatação de código
-- **Ruff** - Linter rápido
-- **Pytest** - Testes
-- **Pre-commit** - Hooks de qualidade
-
-### Rodar testes
+Use `--no-buffer` para ver os chunks em tempo real.
 
 ```bash
-pytest
+curl --no-buffer -X POST "http://localhost:9100/api/v1/agent/chat/stream" \
+  -H "Authorization: Bearer <ACCESS_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clinica_id": "170a7399-4b47-4ad1-a10b-a8ac69b4a166",
+    "mensagem": "Quais horários você tem para amanhã?"
+  }'
 ```
 
-### Formatar código
+## OpenClaw e Fallback
+
+Com `USE_OPENCLAW=true`:
+
+- `/chat` tenta `OpenClawClient.send_prompt(...)`
+- `/chat/stream` tenta `OpenClawClient.stream_prompt(...)`
+
+Fallback automático para `YumiAgent` ocorre quando:
+
+- OpenClaw está desabilitado (`USE_OPENCLAW=false`)
+- timeout
+- falha de conexão WebSocket
+- erro inesperado no fluxo OpenClaw
+
+## Segurança
+
+- autenticação JWT bearer
+- refresh token com rotação
+- proteção multi-tenant por `clinica_id`
+- rate limit em login (`5/minute`)
+
+## Logs
+
+Logger central em `src/yumi/core/logger.py` com:
+
+- saída em console
+- arquivo rotativo em `logs/`
+- níveis de severidade (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`)
+
+## Testes
+
+Executar suíte completa:
 
 ```bash
-black src/
+PYTHONPATH=src pytest -q
 ```
 
-### Lint
+Executar apenas streaming:
 
 ```bash
-ruff check src/
+PYTHONPATH=src pytest -q tests/units/test_chat_stream_service.py tests/integrations/test_chat_stream_route.py
 ```
 
-## �️ Desenvolvimento
-
-### Ferramentas de Dev
-
-- **Black** - Formatação de código
-- **Ruff** - Linter rápido
-- **Pytest** - Testes
-- **Pre-commit** - Hooks de qualidade
-
-### Rodar testes
+## Qualidade de Código
 
 ```bash
-pytest
+black src tests
+ruff check src tests
 ```
 
-### Formatar código
+## Status Atual
 
-```bash
-black src/
-```
-
-### Lint
-
-```bash
-ruff check src/
-```
-
-## 📋 Logging
-
-### Overview
-
-Sistema centralizado de logging com boas práticas, registrando todas as operações do projeto com formato padronizado.
-
-**Formato de log:**
-
-```
-DATA:HORA - NÍVEL - MENSAGEM - ARQUIVO - FUNÇÃO
-```
-
-**Exemplo:**
-
-```
-28/02/2026 14:30:45 - INFO - Clínica criada com sucesso: Clínica Vet - clinica_service.py - create_clinica
-```
-
-### 🎯 Características
-
-✅ **Centralizado** - Um único ponto de configuração  
-✅ **Rotação automática** - Novo arquivo a cada 10MB  
-✅ **Console colorido** - Cores diferentes para cada nível  
-✅ **Arquivo de logs** - Histórico completo em `logs/`  
-✅ **Sem dados sensíveis** - Configurado para não expor informações confidenciais  
-✅ **Níveis apropriados** - DEBUG, INFO, WARNING, ERROR, CRITICAL
-
-### 📦 Como Usar o Logger
-
-#### 1. **Importar o logger**
-
-```python
-from yumi.core.logger import logger
-
-# OU usar as funções auxiliares
-from yumi.core.logger import log_info, log_error, log_warning, log_debug
-```
-
-#### 2. **Usar em Serviços (Lógica de Negócio)**
-
-```python
-from yumi.core.logger import logger
-
-def criar_clinica(db: Session, clinica_data: ClinicaCreate):
-    logger.debug(f"Iniciando criação de clínica: {clinica_data.nome}")
-
-    try:
-        # Lógica
-        logger.info(f"Clínica criada: {clinica.nome} (ID: {clinica.id})")
-        return clinica
-    except Exception as e:
-        logger.error(f"Erro ao criar clínica", exception=e)
-        raise
-```
-
-#### 3. **Usar em Rotas (Endpoints)**
-
-```python
-from yumi.core.logger import logger
-
-@router.post("/")
-async def criar_clinica(clinica_data: ClinicaCreate, db: Session = Depends(get_db)):
-    logger.info(f"POST /clinicas - Criando: {clinica_data.nome}")
-
-    try:
-        nova_clinica = clinica_service.create_clinica(db, clinica_data)
-        return {"mensagem": "Sucesso", "clinica": nova_clinica}
-    except Exception as e:
-        logger.error(f"Erro no endpoint", exception=e)
-        raise
-```
-
-#### 4. **Usar em Banco de Dados**
-
-```python
-from yumi.core.logger import logger
-
-def get_db():
-    db = SessionLocal()
-    logger.debug("Sessão de banco aberta")
-    try:
-        yield db
-    except Exception as e:
-        logger.error("Erro no banco", exception=e)
-        db.rollback()
-        raise
-    finally:
-        db.close()
-        logger.debug("Sessão de banco fechada")
-```
-
-### 📊 Níveis de Log
-
-| Nível        | Uso                                     | Exemplo                                |
-| ------------ | --------------------------------------- | -------------------------------------- |
-| **DEBUG**    | Informações detalhadas para diagnóstico | Inicio de função, valores de variáveis |
-| **INFO**     | Eventos normais importantes             | Sucesso de operações, inicialização    |
-| **WARNING**  | Situações inesperadas mas recuperáveis  | Duplicação, valores inválidos          |
-| **ERROR**    | Erros que precisam atenção              | Exceções de banco, validação falhou    |
-| **CRITICAL** | Erros graves do sistema                 | Falha na inicialização, perda de dados |
-
-### 🗂️ Estrutura de Logs
-
-```
-logs/
-├── yumi_20260228.log    # Logs do dia 28/02/2026
-├── yumi_20260227.log    # Logs do dia anterior
-└── yumi_20260227.log.1  # Arquivo comprimido antigo
-```
-
-Cada arquivo log comporta até 10MB. Quando atinge, um novo é criado.
-
-### 🎨 Formato Completo
-
-**Console (com cores):**
-
-```
-28/02/2026 14:30:45 - INFO - Clínica criada com sucesso - clinica_service.py - create_clinica
-```
-
-**Arquivo (completo):**
-
-```
-28/02/2026 14:30:45 - INFO - Clínica criada com sucesso - clinica_service.py - create_clinica - /media/Dados/openclaw_veterinario/src/yumi/services/clinica_service.py:35
-```
-
-### 🔧 Configuração Avançada
-
-A configuração está em [src/yumi/core/logger.py](src/yumi/core/logger.py). Para evitar logs muito verbosos:
-
-**Desenvolvimento** (UNSET = DEBUG):
-
-```python
-if settings.ENVIRONMENT == "development":
-    logger.setLevel(logging.DEBUG)  # Mostra tudo
-```
-
-**Produção** (INFO e acima):
-
-```python
-else:
-    logger.setLevel(logging.INFO)   # Menos verboso
-```
-
-### ⚠️ Boas Práticas
-
-#### ✅ Faça:
-
-```python
-# Log com contexto claro
-logger.info(f"Usuário criado: {usuario.id} - Email: {usuario.email}")
-
-# Log de erros com exceção
-try:
-    executar()
-except Exception as e:
-    logger.error("Erro ao executar", exception=e)
-
-# Log de debug para fluxo
-logger.debug(f"Validando dados: {dados}")
-```
-
-#### ❌ Não faça:
-
-```python
-# Senhas, tokens, dados sensíveis
-logger.info(f"Usuário: {usuario.senha}")
-
-# Print simples
-print("Executando algo")  # Use logger em vez disso
-
-# Sem contexto
-logger.info("Erro")  # Muito vago
-```
-
-### 📝 Exemplo Completo
-
-```python
-# services/clinica_service.py
-
-from yumi.core.logger import logger
-
-def create_clinica(db: Session, clinica_data: ClinicaCreate):
-    """Cria uma nova clínica."""
-    logger.debug(f"Iniciando criação de clínica: {clinica_data.nome}")
-
-    # Verifica duplicidade
-    clinica_existente = db.query(Clinica).filter(
-        Clinica.nome == clinica_data.nome
-    ).first()
-
-    if clinica_existente:
-        logger.warning(
-            f"Tentativa de criar clínica duplicada: {clinica_data.nome} "
-            f"(ID: {clinica_existente.id})"
-        )
-        raise HTTPException(status_code=400, detail="Clínica já existe")
-
-    try:
-        nova_clinica = Clinica(
-            id=gerar_uuid(),
-            nome=clinica_data.nome,
-            endereco=clinica_data.endereco
-        )
-
-        db.add(nova_clinica)
-        db.commit()
-        db.refresh(nova_clinica)
-
-        logger.info(
-            f"Clínica criada com sucesso: {nova_clinica.nome} "
-            f"(ID: {nova_clinica.id})"
-        )
-        return nova_clinica
-
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Erro ao criar clínica {clinica_data.nome}", exception=e)
-        raise
-```
-
-### 🔍 Visualizar Logs
-
-```bash
-# Último arquivo de log
-tail -f logs/yumi_*.log
-
-# Ver últimas 50 linhas
-tail -50 logs/yumi_*.log
-
-# Buscar erro específico
-grep "ERROR" logs/yumi_*.log
-
-# Contar quantos erros houve
-grep -c "ERROR" logs/yumi_*.log
-```
-
-## �📝 Configuração
-
-As configurações estão centralizadas em [src/yumi/core/config.py](src/yumi/core/config.py):
-
-- `APP_NAME` - Nome da aplicação
-- `DATABASE_URL` - URL do banco de dados
-- `HOST` / `PORT` - Configurações do servidor
-- `SECRET_KEY` - Chave para autenticação
-
-## 🚧 Pendências Técnicas
-
-### 🔴 Token Blocklist no Logout (requer Redis)
-
-**Status:** Não implementado  
-**Prioridade:** Baixa (funcional para estudo, necessário antes de produção)
-
-**Problema atual:**  
-O logout revoga o `refresh_token` no banco, mas o `access_token` continua válido até seu vencimento natural (ex: 30 minutos). Um atacante com o access token capturado pode continuar usá-lo mesmo após o logout do usuário legítimo.
-
-**Solução planejada:**
-
-1. Adicionar campo `jti` (JWT ID — UUID único) no payload de cada `access_token` gerado em `security.py`
-2. Criar `src/yumi/auth/token_blocklist.py` com `bloquear_jti()` e `jti_esta_bloqueado()`
-3. No logout (`auth_routes.py`): extrair o `jti` do access token e adicioná-lo à blocklist
-4. Em `dependencies.py`: verificar o `jti` na blocklist a cada requisição autenticada
-
-**Armazenamento:**
-
-- **Agora (SQLite/dev):** `set` Python em memória — se perde ao reiniciar o servidor
-- **Produção (obrigatório):** Redis com TTL igual ao tempo de expiração do access token (`ACCESS_TOKEN_EXPIRE_MINUTES`)
-
-**Dependência a instalar quando for implementar:**
-
-```bash
-poetry add redis
-```
-
----
-
-## 🤝 Contribuindo
-
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/nova-feature`)
-3. Commit suas mudanças (`git commit -m 'Adiciona nova feature'`)
-4. Push para a branch (`git push origin feature/nova-feature`)
-5. Abra um Pull Request
-
-## 📄 Licença
-
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
-## 👨‍💻 Autor
-
-**Will Lima**
-
----
-
-⭐ Feito com FastAPI e ❤️
+O projeto está com fluxo de chat e streaming funcionando com fallback operacional, preparado para evolução das integrações com OpenClaw e canais externos.

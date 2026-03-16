@@ -17,6 +17,7 @@ Canais futuros que usarão este endpoint:
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from yumi.agents.yumi_agent.yumi import YumiAgent
@@ -24,7 +25,7 @@ from yumi.auth.dependencies import Usuario, get_current_atendente
 from yumi.core.database import get_db
 from yumi.core.logger import logger
 from yumi.schemas.schemas_chat import ChatRequest, ChatResponse
-from yumi.services.chat_service import get_history, get_or_create_session, save_message
+from yumi.services.chat_service import process_chat_message, process_chat_stream
 
 router = APIRouter()
 
@@ -35,7 +36,8 @@ router = APIRouter()
     status_code=status.HTTP_200_OK,
     summary="Enviar mensagem ao Yumi Agent",
     description="""
-    Ponto de entrada único para todos os canais de comunicação com o Yumi Agent.
+    Ponto de entrada único para todos os canais de comunicação
+    com o Yumi Agent.
 
     O agente detecta a intenção da mensagem e executa a ação correspondente.
 
@@ -53,7 +55,11 @@ router = APIRouter()
     responses={
         200: {"description": "Agente respondeu com sucesso"},
         401: {"description": "Token JWT ausente ou inválido"},
-        403: {"description": "Acesso negado — clinica_id não corresponde ao token"},
+        403: {
+            "description": (
+                "Acesso negado — clinica_id não corresponde ao token"
+            )
+        },
         422: {"description": "Mensagem ausente ou inválida"},
     },
 )
@@ -70,12 +76,15 @@ async def chat(
         presente no token JWT do usuário autenticado.
         Isso impede que um usuário de uma clínica acesse dados de outra.
     """
-    # Validação multi-tenant — idêntica ao verificar_mesma_clinica de dependencies.py
+    # Validação multi-tenant equivalente ao verificar_mesma_clinica.
     # mas feita inline pois clinica_id vem do body (não da URL)
     if current_user.clinica_id != request.clinica_id:
         logger.warning(
-            f"[/chat] Tentativa de acesso cruzado: usuário {current_user.email} "
-            f"(clínica {current_user.clinica_id}) tentou acessar clínica {request.clinica_id}"
+            "[/chat] Tentativa de acesso cruzado: usuário %s "
+            "(clínica %s) tentou acessar clínica %s",
+            current_user.email,
+            current_user.clinica_id,
+            request.clinica_id,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -83,40 +92,91 @@ async def chat(
         )
 
     logger.info(
-        f"[/chat] Mensagem de {current_user.email} "
-        f"(clínica {request.clinica_id}): '{request.mensagem}'"
+        "[/chat] Mensagem de %s (clínica %s): '%s'",
+        current_user.email,
+        request.clinica_id,
+        request.mensagem,
     )
 
-    # 1. Identifica sessão existente ou cria nova
-    session = get_or_create_session(
+    resultado = await process_chat_message(
         db=db,
         clinica_id=request.clinica_id,
-        usuario_id=current_user.id,
+        usuario_id=str(current_user.id),
+        mensagem=request.mensagem,
         session_id=request.session_id,
-        canal="chat",
+        agent_factory=YumiAgent,
     )
 
-    # 2. Persiste mensagem do usuário
-    save_message(db=db, session_id=session.id, role="user", message=request.mensagem)
-
-    # 3. Recupera histórico da sessão (últimas 20 mensagens)
-    historico = get_history(db=db, session_id=session.id, limit=20)
-
-    # 4. Instancia o agente e processa com histórico
-    agent = YumiAgent(clinica_id=request.clinica_id, db=db)
-    resultado = agent.handle_message(request.mensagem, historico=historico)
-
-    # 5. Persiste resposta do agente
-    save_message(db=db, session_id=session.id, role="assistant", message=resultado["resposta"])
-
     logger.info(
-        f"[/chat] Resposta gerada — intenção: {resultado['intencao']} "
-        f"| sessão: {session.id}"
+        "[/chat] Resposta gerada — intenção: %s | sessão: %s",
+        resultado["intencao"],
+        resultado["session_id"],
     )
 
     return ChatResponse(
         intencao=resultado["intencao"],
         resposta=resultado["resposta"],
         dados=resultado.get("dados"),
-        session_id=session.id,
+        session_id=resultado["session_id"],
     )
+
+
+@router.post(
+    "/chat/stream",
+    status_code=status.HTTP_200_OK,
+    summary="Enviar mensagem ao Yumi Agent (streaming)",
+    description="""
+    Endpoint de streaming para respostas em chunks.
+
+    Fluxo:
+    - persiste mensagem e histórico
+    - tenta stream via OpenClaw quando habilitado
+    - aplica fallback local em falhas
+    """,
+    responses={
+        200: {"description": "Stream iniciado com sucesso"},
+        401: {"description": "Token JWT ausente ou inválido"},
+        403: {
+            "description": (
+                "Acesso negado — clinica_id não corresponde ao token"
+            )
+        },
+        422: {"description": "Mensagem ausente ou inválida"},
+    },
+)
+async def chat_stream(
+    request: ChatRequest,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_atendente),
+):
+    """Recebe mensagem e retorna stream textual da resposta do agente."""
+    if current_user.clinica_id != request.clinica_id:
+        logger.warning(
+            "[/chat/stream] Tentativa de acesso cruzado: usuário %s "
+            "(clínica %s) tentou acessar clínica %s",
+            current_user.email,
+            current_user.clinica_id,
+            request.clinica_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso negado — clinica_id não corresponde ao seu token",
+        )
+
+    logger.info(
+        "[/chat/stream] Mensagem de %s (clínica %s): '%s'",
+        current_user.email,
+        request.clinica_id,
+        request.mensagem,
+    )
+
+    stream = process_chat_stream(
+        db=db,
+        clinica_id=request.clinica_id,
+        usuario_id=str(current_user.id),
+        mensagem=request.mensagem,
+        session_id=request.session_id,
+        agent_factory=YumiAgent,
+    )
+
+    return StreamingResponse(stream, media_type="text/plain")
